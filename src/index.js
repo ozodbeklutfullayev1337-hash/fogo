@@ -1,29 +1,36 @@
-require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
-const bot = require('./core/bot');
-const clientRoutes = require('./routes/client.routes');
-const adminRoutes = require('./routes/admin.routes');
+import express from 'express';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import clientRoutes from './routes/client.routes.js';
+import adminRoutes from './routes/admin.routes.js';
+import { bot } from './core/bot.js';
+
+dotenv.config();
 
 const app = express();
+const PORT = process.env.PORT || 5000;
 
-app.use(cors());
+// CORS sozlamasi (Frontend so'rovlarini qabul qilish uchun)
+app.use(cors({ origin: '*' }));
 app.use(express.json());
 
-// API yo'nalishlari
+// Marshrutlar (Routes)
 app.use('/api', clientRoutes);
 app.use('/api/admin', adminRoutes);
 
+// Server holatini tekshirish
+app.get('/', (req, res) => {
+  res.json({ message: 'FOGO Fast Food API ishlab turibdi 🚀' });
+});
+
 // Serverni ishga tushirish
-const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`Server http://localhost:${PORT} portida ishga tushdi`);
+  console.log(`Server ${PORT}-portda muvaffaqiyatli ishga tushdi`);
 });
 
 // Telegram botni ishga tushirish
-bot.launch()
-  .then(() => console.log('Telegram bot muvaffaqiyatli ulandi!'))
-  .catch((err) => console.error('Bot ishga tushishida xatolik:', err.message));
-
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+if (bot && typeof bot.launch === 'function') {
+  bot.launch()
+    .then(() => console.log('Telegram Bot muvaffaqiyatli ishga tushdi 🤖'))
+    .catch((err) => console.error('Bot ishga tushishida xatolik:', err));
+}

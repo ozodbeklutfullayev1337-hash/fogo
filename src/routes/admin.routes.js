@@ -1,9 +1,12 @@
-const express = require('express');
-const router = express.Router();
-const adminController = require('../controllers/adminController');
+import { Router } from 'express';
+import { getAdminOrders, updateOrderStatus } from '../controllers/adminController.js';
 
-router.get('/orders', adminController.getAllOrders);
-router.put('/orders/:id/status', adminController.updateOrderStatus);
-router.post('/products', adminController.createProduct);
+const router = Router();
 
-module.exports = router;
+// /api/admin/orders
+router.get('/orders', getAdminOrders);
+
+// /api/admin/orders/:id/status
+router.patch('/orders/:id/status', updateOrderStatus);
+
+export default router;

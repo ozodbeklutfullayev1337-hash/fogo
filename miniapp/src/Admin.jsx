@@ -1,29 +1,37 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Package, PlusCircle, CheckCircle, XCircle } from 'lucide-react';
+
+const API_BASE = 'https://fogo-8c12.onrender.com';
 
 export default function Admin() {
+  const [activeTab, setActiveTab] = useState('orders'); // 'orders' | 'add'
   const [orders, setOrders] = useState([]);
-  const [tab, setTab] = useState('orders'); // 'orders' | 'new-product'
   const [loading, setLoading] = useState(false);
 
-  const [form, setForm] = useState({
-    name: '',
-    description: '',
-    price: '',
-    category: 'Burger',
-    imageUrl: ''
-  });
+  // Yangi taom qo'shish uchun maydonlar
+  const [name, setName] = useState('');
+  const [category, setCategory] = useState('Burger');
+  const [price, setPrice] = useState('');
+  const [oldPrice, setOldPrice] = useState('');
+  const [description, setDescription] = useState('');
+  const [image, setImage] = useState('');
 
+  // Buyurtmalarni yuklab olish funksiyasi
   const fetchOrders = async () => {
-    setLoading(true);
     try {
-      const res = await fetch('http://localhost:5000/api/admin/orders');
+      setLoading(true);
+      // Avval admin yo'lidan tekshiramiz, bo'lmasa oddiy ordersdan
+      let res = await fetch(`${API_BASE}/api/admin/orders`);
+      if (!res.ok) {
+        res = await fetch(`${API_BASE}/api/orders`);
+      }
       const data = await res.json();
       if (data.success) {
-        setOrders(data.data);
+        setOrders(data.data || []);
+      } else if (Array.isArray(data)) {
+        setOrders(data);
       }
     } catch (err) {
-      console.error('Buyurtmalarni yuklashda xatolik:', err);
+      console.error('Buyurtmalarni olishda xatolik:', err);
     } finally {
       setLoading(false);
     }
@@ -33,201 +41,230 @@ export default function Admin() {
     fetchOrders();
   }, []);
 
-  const updateStatus = async (orderId, newStatus) => {
-    try {
-      const res = await fetch(`http://localhost:5000/api/admin/orders/${orderId}/status`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus })
-      });
-      const data = await res.json();
-      if (data.success) {
-        fetchOrders();
-      }
-    } catch (err) {
-      console.error('Holatni o\'zgartirishda xatolik:', err);
-    }
-  };
-
-  const handleCreateProduct = async (e) => {
+  const handleAddProduct = async (e) => {
     e.preventDefault();
+    if (!name || !price) {
+      alert('Iltimos, taom nomi va narxini kiriting!');
+      return;
+    }
+
     try {
-      const res = await fetch('http://localhost:5000/api/admin/products', {
+      const res = await fetch(`${API_BASE}/api/products`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form)
+        body: JSON.stringify({
+          name,
+          category,
+          price: Number(price),
+          oldPrice: oldPrice ? Number(oldPrice) : null,
+          description,
+          image
+        })
       });
       const data = await res.json();
       if (data.success) {
-        alert('Taom muvaffaqiyatli qo\'shildi!');
-        setForm({ name: '', description: '', price: '', category: 'Burger', imageUrl: '' });
+        alert("Taom muvaffaqiyatli qo'shildi!");
+        setName('');
+        setPrice('');
+        setOldPrice('');
+        setDescription('');
+        setImage('');
+      } else {
+        alert("Xatolik: taom qo'shilmadi");
       }
     } catch (err) {
-      console.error('Taom qo\'shishda xatolik:', err);
+      alert("Server bilan bog'lanishda xatolik yuz berdi");
     }
   };
 
   return (
-    <div style={{ maxWidth: '800px', margin: '0 auto', padding: '16px', fontFamily: 'sans-serif' }}>
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-        <h2 style={{ margin: 0, fontSize: '20px' }}>⚡ Boshqaruv paneli</h2>
-        <div>
-          <button 
-            onClick={() => setTab('orders')}
-            style={{ 
-              padding: '8px 14px', 
-              marginRight: '8px', 
-              background: tab === 'orders' ? '#ef4444' : '#e2e8f0', 
-              color: tab === 'orders' ? '#fff' : '#000', 
-              border: 'none', 
-              borderRadius: '6px', 
-              cursor: 'pointer',
-              fontWeight: 'bold',
-              fontSize: '13px'
+    <div className="max-w-md mx-auto text-white pb-20">
+      {/* Yuqori qism (Header) */}
+      <div className="flex items-center justify-between gap-2 mb-4 pb-3 border-b border-slate-800">
+        <h1 className="text-base font-bold text-amber-400 flex items-center gap-1.5">
+          ⚡ Boshqaruv paneli
+        </h1>
+        <div className="flex gap-2">
+          <button
+            onClick={() => {
+              setActiveTab('orders');
+              fetchOrders();
             }}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+              activeTab === 'orders'
+                ? 'bg-red-500 text-white shadow'
+                : 'bg-slate-800 text-slate-300'
+            }`}
           >
             Buyurtmalar ({orders.length})
           </button>
-          <button 
-            onClick={() => setTab('new-product')}
-            style={{ 
-              padding: '8px 14px', 
-              background: tab === 'new-product' ? '#ef4444' : '#e2e8f0', 
-              color: tab === 'new-product' ? '#fff' : '#000', 
-              border: 'none', 
-              borderRadius: '6px', 
-              cursor: 'pointer',
-              fontWeight: 'bold',
-              fontSize: '13px'
-            }}
+          <button
+            onClick={() => setActiveTab('add')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+              activeTab === 'add'
+                ? 'bg-amber-500 text-slate-950 shadow'
+                : 'bg-slate-800 text-slate-300'
+            }`}
           >
             + Taom qo'shish
           </button>
         </div>
-      </header>
+      </div>
 
-      {tab === 'orders' ? (
+      {/* Buyurtmalar ro'yxati vkladkasi */}
+      {activeTab === 'orders' && (
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <span style={{ fontWeight: 'bold' }}>Kelib tushgan buyurtmalar</span>
-            <button 
-              onClick={fetchOrders} 
-              style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 12px', cursor: 'pointer', border: '1px solid #cbd5e1', borderRadius: '6px', background: '#fff', fontWeight: 'bold', fontSize: '13px' }}
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs font-semibold text-slate-400">
+              Kelib tushgan buyurtmalar
+            </span>
+            <button
+              onClick={fetchOrders}
+              className="text-xs bg-slate-800 hover:bg-slate-700 text-amber-400 px-2.5 py-1 rounded-md border border-slate-700 transition"
             >
-              <RefreshCw size={14} /> Yangilash
+              🔄 Yangilash
             </button>
           </div>
 
           {loading ? (
-            <p>Yuklanmoqda...</p>
+            <p className="text-slate-400 text-xs text-center py-8">Yuklanmoqda...</p>
           ) : orders.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '40px 0', color: '#64748b' }}>
-              <p>Hozircha buyurtmalar mavjud emas.</p>
+            <div className="text-center py-10 text-slate-400 text-xs bg-slate-800/40 rounded-xl border border-slate-800">
+              Hozircha buyurtmalar mavjud emas.
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div className="space-y-3">
               {orders.map((o) => (
-                <div key={o.id} style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '14px', background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <h4 style={{ margin: '0', fontSize: '15px' }}>Buyurtma #{o.id} — {o.totalPrice ? o.totalPrice.toLocaleString() : 0} so'm</h4>
-                    <span style={{ 
-                      padding: '4px 8px', 
-                      borderRadius: '6px', 
-                      fontSize: '12px', 
-                      fontWeight: 'bold',
-                      background: o.status === 'delivered' ? '#dcfce7' : o.status === 'cancelled' ? '#fee2e2' : '#fef9c3', 
-                      color: o.status === 'delivered' ? '#166534' : o.status === 'cancelled' ? '#991b1b' : '#854d0e' 
-                    }}>
-                      {o.status === 'delivered' ? 'Yetkazildi' : o.status === 'cancelled' ? 'Bekor qilindi' : 'Kutilmoqda'}
+                <div
+                  key={o.id}
+                  className="bg-slate-800 border border-slate-700/80 rounded-xl p-3 shadow-sm"
+                >
+                  <div className="flex justify-between items-center pb-2 mb-2 border-b border-slate-700/60">
+                    <span className="font-bold text-amber-400 text-sm">
+                      Buyurtma #{o.id}
+                    </span>
+                    <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300">
+                      {o.status || 'kutilmoqda'}
                     </span>
                   </div>
+                  <div className="text-xs space-y-1.5 text-slate-300">
+                    <p>
+                      <span className="text-slate-500">Mijoz:</span>{' '}
+                      <strong className="text-white">{o.customerName || 'Mijoz'}</strong>
+                    </p>
+                    <p>
+                      <span className="text-slate-500">Telefon:</span>{' '}
+                      <strong className="text-white">{o.phone}</strong>
+                    </p>
+                    <p>
+                      <span className="text-slate-500">Manzil:</span> {o.address}
+                    </p>
 
-                  <p style={{ margin: '6px 0 3px', fontSize: '14px' }}>👤 Mijoz: <b>{o.user?.firstName || 'Mehmon'}</b> ({o.user?.phone || 'Raqamsiz'})</p>
-                  <p style={{ margin: '3px 0 8px', fontSize: '14px' }}>📍 Manzil: {o.location || 'Ko\'rsatilmagan'}</p>
+                    {/* Buyurtma tarkibidagi mahsulotlar */}
+                    {o.items && o.items.length > 0 && (
+                      <div className="pt-1.5 border-t border-slate-700/40 text-[11px] text-slate-400">
+                        <span className="font-semibold text-slate-300 block mb-0.5">Tarkibi:</span>
+                        {o.items.map((item, idx) => (
+                          <div key={idx} className="flex justify-between">
+                            <span>• {item.product?.name || item.name || 'Mahsulot'} x {item.quantity}</span>
+                            <span>{Number(item.price * item.quantity).toLocaleString()} so'm</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
 
-                  <div style={{ padding: '8px 12px', background: '#f8fafc', borderRadius: '6px', fontSize: '13px' }}>
-                    <b>Buyurtma tarkibi:</b>
-                    <ul style={{ margin: '4px 0', paddingLeft: '18px' }}>
-                      {Array.isArray(o.items) && o.items.map((item, idx) => (
-                        <li key={idx}>{item.name} x {item.quantity} dona ({((item.price || 0) * (item.quantity || 1)).toLocaleString()} so'm)</li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  {/* Buyurtma holatini boshqarish tugmalari */}
-                  <div style={{ marginTop: '12px', display: 'flex', gap: '10px' }}>
-                    <button 
-                      onClick={() => updateStatus(o.id, 'delivered')} 
-                      style={{ padding: '8px 14px', fontSize: '13px', background: '#22c55e', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
-                    >
-                      ✅ Yetkazildi
-                    </button>
-                    <button 
-                      onClick={() => updateStatus(o.id, 'cancelled')} 
-                      style={{ padding: '8px 14px', fontSize: '13px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
-                    >
-                      ❌ Bekor qilish
-                    </button>
+                    <div className="pt-1.5 border-t border-slate-750 flex justify-between items-center">
+                      <span className="text-slate-400">Jami to'lov:</span>
+                      <span className="text-amber-400 font-bold text-sm">
+                        {Number(o.totalPrice).toLocaleString()} so'm
+                      </span>
+                    </div>
                   </div>
                 </div>
               ))}
             </div>
           )}
         </div>
-      ) : (
-        <form onSubmit={handleCreateProduct} style={{ background: '#fff', padding: '16px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-          <h3 style={{ marginTop: 0 }}>Yangi taom qo'shish</h3>
-          <div style={{ marginBottom: '10px' }}>
-            <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>Taom nomi:</label>
-            <input 
-              required 
-              value={form.name} 
-              onChange={(e) => setForm({ ...form, name: e.target.value })} 
-              style={{ width: '100%', padding: '8px', boxSizing: 'border-box', borderRadius: '6px', border: '1px solid #cbd5e1' }} 
-              placeholder="Masalan: Double Cheeseburger" 
+      )}
+
+      {/* Yangi taom qo'shish formasi */}
+      {activeTab === 'add' && (
+        <form
+          onSubmit={handleAddProduct}
+          className="bg-slate-800/80 border border-slate-700 p-4 rounded-xl space-y-3"
+        >
+          <h2 className="text-sm font-bold text-amber-400 mb-1">Yangi taom qo'shish</h2>
+          <div>
+            <label className="text-xs text-slate-400 block mb-1">Taom nomi</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Masalan: Double Cheeseburger"
+              className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+              required
             />
           </div>
-          <div style={{ marginBottom: '10px' }}>
-            <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>Narxi (so'm):</label>
-            <input 
-              required 
-              type="number" 
-              value={form.price} 
-              onChange={(e) => setForm({ ...form, price: e.target.value })} 
-              style={{ width: '100%', padding: '8px', boxSizing: 'border-box', borderRadius: '6px', border: '1px solid #cbd5e1' }} 
-              placeholder="Masalan: 42000" 
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-xs text-slate-400 block mb-1">Kategoriya</label>
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+              >
+                <option value="Burger">Burger</option>
+                <option value="Lavash">Lavash</option>
+                <option value="Hot-dog">Hot-dog</option>
+                <option value="Snack">Snack</option>
+                <option value="Ichimlik">Ichimlik</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-slate-400 block mb-1">Narxi (so'm)</label>
+              <input
+                type="number"
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+                placeholder="35000"
+                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+                required
+              />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-slate-400 block mb-1">Eski narxi (aksiya uchun)</label>
+            <input
+              type="number"
+              value={oldPrice}
+              onChange={(e) => setOldPrice(e.target.value)}
+              placeholder="40000"
+              className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
             />
           </div>
-          <div style={{ marginBottom: '10px' }}>
-            <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>Kategoriya:</label>
-            <input 
-              value={form.category} 
-              onChange={(e) => setForm({ ...form, category: e.target.value })} 
-              style={{ width: '100%', padding: '8px', boxSizing: 'border-box', borderRadius: '6px', border: '1px solid #cbd5e1' }} 
-              placeholder="Masalan: Burger, Lavash, Ichimlik" 
+          <div>
+            <label className="text-xs text-slate-400 block mb-1">Rasm havolasi (URL)</label>
+            <input
+              type="url"
+              value={image}
+              onChange={(e) => setImage(e.target.value)}
+              placeholder="https://..."
+              className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
             />
           </div>
-          <div style={{ marginBottom: '10px' }}>
-            <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>Rasm URL havolasi:</label>
-            <input 
-              value={form.imageUrl} 
-              onChange={(e) => setForm({ ...form, imageUrl: e.target.value })} 
-              style={{ width: '100%', padding: '8px', boxSizing: 'border-box', borderRadius: '6px', border: '1px solid #cbd5e1' }} 
-              placeholder="https://..." 
-            />
+          <div>
+            <label className="text-xs text-slate-400 block mb-1">Tavsifi</label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Tarkibi va masalliqlari..."
+              rows="2"
+              className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+            ></textarea>
           </div>
-          <div style={{ marginBottom: '14px' }}>
-            <label style={{ display: 'block', fontSize: '13px', marginBottom: '4px' }}>Tavsif:</label>
-            <textarea 
-              value={form.description} 
-              onChange={(e) => setForm({ ...form, description: e.target.value })} 
-              style={{ width: '100%', padding: '8px', boxSizing: 'border-box', borderRadius: '6px', border: '1px solid #cbd5e1' }} 
-              placeholder="Tarkibi va porsiya haqida ma'lumot" 
-            />
-          </div>
-          <button 
-            type="submit" 
-            style={{ padding: '10px 18px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
+          <button
+            type="submit"
+            className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2 rounded-lg text-xs transition"
           >
             Saqlash
           </button>
