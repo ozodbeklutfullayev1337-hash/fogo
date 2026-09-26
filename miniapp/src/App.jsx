@@ -1,478 +1,441 @@
 import React, { useState, useEffect } from 'react';
-import Admin from './Admin';
+import axios from 'axios';
 
 const API_BASE = 'https://fogo-8c12.onrender.com';
 
-// Telegram Haptic Feedback (Telefonda tebranish effekti)
-const triggerHaptic = (type = 'light') => {
-  if (window.Telegram?.WebApp?.HapticFeedback) {
-    window.Telegram.WebApp.HapticFeedback.impactOccurred(type);
-  }
-};
-
 export default function App() {
-  const [activeTab, setActiveTab] = useState('menu'); // 'menu' | 'cart' | 'admin'
-  const [category, setCategory] = useState('Barchasi');
+  const [categories, setCategories] = useState([]);
   const [products, setProducts] = useState([]);
+  const [selectedCategory, setSelectedCategory] = useState(null);
   const [cart, setCart] = useState([]);
+  const [activeTab, setActiveTab] = useState('menu'); // 'menu' | 'orders' | 'cart' | 'promo' | 'profile'
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showSearch, setShowSearch] = useState(false);
   const [loading, setLoading] = useState(true);
-
-  // Buyurtma formasi
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [address, setAddress] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState(false);
+  
+  // Checkout ma'lumotlari
+  const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [customerAddress, setCustomerAddress] = useState('');
 
-  const categories = ['Barchasi', 'Burger', 'Lavash', 'Hot-dog', 'Snack', 'Ichimlik'];
+  // Telegram Haptic
+  const triggerHaptic = (type = 'light') => {
+    if (window.Telegram?.WebApp?.HapticFeedback) {
+      if (['success', 'warning', 'error'].includes(type)) {
+        window.Telegram.WebApp.HapticFeedback.notificationOccurred(type);
+      } else {
+        window.Telegram.WebApp.HapticFeedback.impactOccurred(type);
+      }
+    }
+  };
 
-  // Taomlarni API dan yuklash
   useEffect(() => {
-    fetchProducts();
+    if (window.Telegram?.WebApp) {
+      window.Telegram.WebApp.ready();
+      window.Telegram.WebApp.expand();
+      if (window.Telegram.WebApp.setHeaderColor) {
+        window.Telegram.WebApp.setHeaderColor('#ffffff');
+      }
+      if (window.Telegram.WebApp.setBackgroundColor) {
+        window.Telegram.WebApp.setBackgroundColor('#f8fafc');
+      }
+    }
+    fetchData();
   }, []);
 
-  const fetchProducts = async () => {
+  const fetchData = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${API_BASE}/api/products`);
-      const data = await res.json();
-      if (data.success && data.data) {
-        setProducts(data.data);
-      }
+      const [catRes, prodRes] = await Promise.all([
+        axios.get(`${API_BASE}/api/client/categories`),
+        axios.get(`${API_BASE}/api/client/products`)
+      ]);
+      setCategories(catRes.data.categories || []);
+      setProducts(prodRes.data.products || []);
     } catch (err) {
-      console.error('Taomlarni yuklashda xatolik:', err);
+      console.error("Yuklashda xato:", err);
     } finally {
       setLoading(false);
     }
   };
 
-  // Savatga taom qo'shish
+  const filteredProducts = products.filter(p => {
+    const matchesCat = selectedCategory ? p.categoryId === selectedCategory : true;
+    const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesCat && matchesSearch;
+  });
+
+  const getItemQuantity = (id) => {
+    const item = cart.find(i => i.id === id);
+    return item ? item.quantity : 0;
+  };
+
   const addToCart = (product) => {
     triggerHaptic('medium');
-    setCart((prev) => {
-      const exist = prev.find((item) => item.id === product.id);
-      if (exist) {
-        return prev.map((item) =>
-          item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
-        );
+    setCart(prev => {
+      const exists = prev.find(item => item.id === product.id);
+      if (exists) {
+        return prev.map(item => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item);
       }
       return [...prev, { ...product, quantity: 1 }];
     });
   };
 
-  // Savatdan bittalab kamaytirish
-  const removeFromCart = (productId) => {
+  const updateQuantity = (id, delta) => {
     triggerHaptic('light');
-    setCart((prev) =>
-      prev
-        .map((item) =>
-          item.id === productId ? { ...item, quantity: item.quantity - 1 } : item
-        )
-        .filter((item) => item.quantity > 0)
-    );
+    setCart(prev => prev.map(item => {
+      if (item.id === id) {
+        const newQty = item.quantity + delta;
+        return newQty > 0 ? { ...item, quantity: newQty } : null;
+      }
+      return item;
+    }).filter(Boolean));
   };
 
-  const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
-  const totalPrice = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const totalAmount = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  const totalCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
-  // Buyurtmani tasdiqlash
   const handleCheckout = async (e) => {
     e.preventDefault();
-    if (!name || !phone || !address) {
-      alert("Iltimos, barcha maydonlarni to'ldiring!");
+    if (!customerPhone || !customerAddress) {
+      triggerHaptic('warning');
+      alert('Telefon raqam va manzilni kiriting!');
       return;
     }
 
     try {
-      setIsSubmitting(true);
-      triggerHaptic('heavy');
-
-      const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
-
       const orderData = {
-        customerName: name,
-        phone,
-        address,
-        telegramId: tgUser?.id || null,
-        items: cart.map((i) => ({
-          productId: i.id,
-          name: i.name,
-          price: i.price,
-          quantity: i.quantity
+        name: customerName || 'Mijoz',
+        phone: customerPhone,
+        address: customerAddress,
+        items: cart.map(item => ({
+          productId: item.id,
+          name: item.name,
+          price: item.price,
+          quantity: item.quantity
         })),
-        totalPrice
+        totalPrice: totalAmount,
+        telegramId: window.Telegram?.WebApp?.initDataUnsafe?.user?.id || null
       };
 
-      const res = await fetch(`${API_BASE}/api/orders`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(orderData)
-      });
-
-      const result = await res.json();
-      if (result.success) {
-        if (window.Telegram?.WebApp?.HapticFeedback) {
-          window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
-        }
-        setOrderSuccess(true);
-        setCart([]);
-        setName('');
-        setPhone('');
-        setAddress('');
-      } else {
-        alert(result.message || "Buyurtma yuborishda xatolik bo'ldi");
-      }
+      await axios.post(`${API_BASE}/api/client/orders`, orderData);
+      triggerHaptic('success');
+      setCart([]);
+      setOrderSuccess(true);
     } catch (err) {
-      alert("Server bilan aloqa uzildi. Qayta urinib ko'ring.");
-    } finally {
-      setIsSubmitting(false);
+      triggerHaptic('error');
+      alert("Buyurtma yuborishda xatolik yuz berdi.");
     }
   };
 
-  const filteredProducts =
-    category === 'Barchasi'
-      ? products
-      : products.filter((p) => p.category?.toLowerCase() === category.toLowerCase());
-
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans pb-28 selection:bg-amber-500 selection:text-black">
-      {/* 1. Header (Brend logos va ish vaqti) */}
-      <header className="sticky top-0 z-30 bg-slate-950/80 backdrop-blur-md border-b border-slate-800/80 px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-600 to-red-600 flex items-center justify-center shadow-lg shadow-amber-600/30 font-black text-white text-base">
-            F
-          </div>
-          <div>
-            <h1 className="text-sm font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500">
-              FOGO FAST FOOD
-            </h1>
-            <p className="text-[10px] text-slate-400 font-medium">Tez va issiq yetkazib berish</p>
-          </div>
+    <div className="min-h-screen bg-[#F7F8FA] text-slate-800 flex flex-col justify-between select-none pb-28">
+      {/* 1. Header (EVOS uslubida toza oq, qidiruv va til bilan) */}
+      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md px-4 py-3 border-b border-slate-100 flex items-center justify-between shadow-[0_2px_10px_rgba(0,0,0,0.03)]">
+        <div className="flex items-center space-x-2">
+          <span className="text-2xl font-black tracking-tight text-orange-600">FOGO</span>
+          <span className="text-[10px] bg-orange-100 text-orange-700 font-bold px-2 py-0.5 rounded-full">Fast Food</span>
         </div>
-        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-semibold">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-          24/7 Ochiq
+
+        <div className="flex items-center space-x-2">
+          <button 
+            onClick={() => { triggerHaptic('light'); setShowSearch(!showSearch); }}
+            className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 active:scale-95 transition-transform"
+          >
+            🔍
+          </button>
+          <div className="flex items-center space-x-1 bg-slate-100 px-2.5 py-1.5 rounded-full text-xs font-bold text-slate-700">
+            <span>🇺🇿</span>
+            <span>Uz</span>
+          </div>
         </div>
       </header>
 
-      {/* Asosiy kontent bo'limlari */}
-      <main className="max-w-md mx-auto px-4 pt-3">
-        {activeTab === 'menu' && (
-          <>
-            {/* 2. Premium Aksiya Banneri */}
-            <div className="relative overflow-hidden rounded-2xl p-4 mb-4 bg-gradient-to-br from-red-600 via-orange-600 to-amber-600 shadow-xl shadow-orange-600/20 text-white">
-              <div className="absolute -right-6 -bottom-6 w-28 h-28 bg-white/10 rounded-full blur-xl pointer-events-none"></div>
-              <span className="inline-block bg-black/30 backdrop-blur-sm px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider text-amber-200 mb-1.5">
-                ⚡ Maxsus Taklif
-              </span>
-              <h2 className="text-lg font-black leading-tight mb-1">
-                Issiq va mazali taomlar 30 daqiqada!
-              </h2>
-              <p className="text-xs text-white/90">
-                Birinchi buyurtmangizga bepul yetkazib berish xizmati.
-              </p>
-            </div>
+      {/* Qidiruv paneli (Ochilganda) */}
+      {showSearch && (
+        <div className="px-4 pt-3 pb-1 bg-white border-b border-slate-100 animate-item-fade">
+          <input
+            type="text"
+            placeholder="Taom nomini yozing..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full bg-slate-100 rounded-xl px-3 py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500"
+            autoFocus
+          />
+        </div>
+      )}
 
-            {/* 3. Toifalar Karuseli (Categories Pills) */}
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1 mb-4">
-              {categories.map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => {
-                    triggerHaptic('light');
-                    setCategory(cat);
-                  }}
-                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all duration-200 active:scale-95 ${
-                    category === cat
-                      ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20 scale-100'
-                      : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
-                  }`}
-                >
-                  {cat}
-                </button>
-              ))}
-            </div>
+      {/* 2. Banner */}
+      <div className="px-4 pt-3">
+        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-orange-500 to-amber-500 p-4 text-white shadow-md shadow-orange-500/20">
+          <span className="text-[10px] font-black uppercase tracking-wider bg-white/20 px-2 py-0.5 rounded-md">
+            Aksiya va Takliflar
+          </span>
+          <h2 className="text-base font-black mt-1">Yulduzli kombolar & Chegirmalar!</h2>
+          <p className="text-[11px] text-white/90 mt-0.5">30 daqiqa ichida tez va issiq yetkazib beramiz</p>
+        </div>
+      </div>
 
-            {/* 4. Taomlar Katalogi */}
-            {loading ? (
-              <div className="grid grid-cols-1 gap-3">
-                {[1, 2, 3].map((n) => (
-                  <div key={n} className="h-28 bg-slate-900/60 rounded-2xl animate-pulse border border-slate-800/50"></div>
-                ))}
-              </div>
-            ) : filteredProducts.length === 0 ? (
-              <div className="text-center py-16 text-slate-500 text-xs">
-                Bu toifada hozircha taomlar mavjud emas.
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 gap-3">
-                {filteredProducts.map((p) => {
-                  const cartItem = cart.find((i) => i.id === p.id);
-                  return (
-                    <div
-                      key={p.id}
-                      className="group bg-slate-900/70 border border-slate-800/80 hover:border-slate-700/80 rounded-2xl p-3 flex gap-3 transition-all duration-200 backdrop-blur-sm"
-                    >
-                      {/* Taom rasmi */}
-                      <div className="relative w-24 h-24 rounded-xl overflow-hidden bg-slate-950 flex-shrink-0">
-                        <img
-                          src={p.image || 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=400'}
-                          alt={p.name}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+      {/* 3. Kategoriyalar (EVOS kabi yumaloq tabletkalar) */}
+      <div className="px-4 pt-3">
+        <div className="flex space-x-2 overflow-x-auto no-scrollbar py-1">
+          <button
+            onClick={() => { triggerHaptic('light'); setSelectedCategory(null); }}
+            className={`px-4 py-2 rounded-2xl text-xs font-bold whitespace-nowrap active:scale-95 transition-all ${
+              selectedCategory === null
+                ? 'bg-orange-500 text-white shadow-md shadow-orange-500/30'
+                : 'bg-white text-slate-600 border border-slate-200/80 shadow-sm'
+            }`}
+          >
+            Barchasi
+          </button>
+          {categories.map(cat => (
+            <button
+              key={cat.id}
+              onClick={() => { triggerHaptic('light'); setSelectedCategory(cat.id); }}
+              className={`px-4 py-2 rounded-2xl text-xs font-bold whitespace-nowrap active:scale-95 transition-all ${
+                selectedCategory === cat.id
+                  ? 'bg-orange-500 text-white shadow-md shadow-orange-500/30'
+                  : 'bg-white text-slate-600 border border-slate-200/80 shadow-sm'
+              }`}
+            >
+              {cat.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 4. Asosiy Mahsulotlar Gridi (Aynan EVOS kabi 2 qatorli grid) */}
+      {activeTab === 'menu' && (
+        <main className="px-4 pt-3 flex-1">
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-20 space-y-3">
+              <div className="w-8 h-8 border-3 border-orange-500 border-t-transparent rounded-full animate-spin" />
+              <p className="text-xs text-slate-400 font-medium">Yuklanmoqda...</p>
+            </div>
+          ) : filteredProducts.length === 0 ? (
+            <p className="text-center py-20 text-xs text-slate-400">Taomlar topilmadi.</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              {filteredProducts.map((prod) => {
+                const qty = getItemQuantity(prod.id);
+                return (
+                  <div
+                    key={prod.id}
+                    className="bg-white rounded-3xl p-3 flex flex-col justify-between border border-slate-100 shadow-[0_4px_16px_rgba(0,0,0,0.04)] relative"
+                  >
+                    {/* Rasm qismi */}
+                    <div className="w-full aspect-square rounded-2xl overflow-hidden bg-slate-50 flex items-center justify-center mb-2 relative">
+                      {prod.image ? (
+                        <img 
+                          src={prod.image} 
+                          alt={prod.name} 
+                          className="w-full h-full object-cover" 
+                          loading="lazy"
                         />
-                        {p.oldPrice && (
-                          <span className="absolute top-1 left-1 bg-red-600/90 text-white text-[9px] font-black px-1.5 py-0.5 rounded shadow">
-                            AKSIYA
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Ma'lumot qismi */}
-                      <div className="flex flex-col justify-between flex-1 min-w-0">
-                        <div>
-                          <h3 className="font-bold text-sm text-white truncate">{p.name}</h3>
-                          <p className="text-[11px] text-slate-400 line-clamp-2 mt-0.5 leading-relaxed">
-                            {p.description || "Suvli kotlet va maxsus FOGO sousi bilan tayyorlangan"}
-                          </p>
-                        </div>
-
-                        <div className="flex items-center justify-between mt-2">
-                          <div>
-                            <div className="text-amber-400 font-extrabold text-sm">
-                              {Number(p.price).toLocaleString()} <span className="text-[10px] font-medium text-amber-500/80">so'm</span>
-                            </div>
-                            {p.oldPrice && (
-                              <span className="text-[10px] text-slate-500 line-through">
-                                {Number(p.oldPrice).toLocaleString()}
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Boshqaruv tugmasi */}
-                          {cartItem ? (
-                            <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-xl px-2 py-1 shadow-inner">
-                              <button
-                                onClick={() => removeFromCart(p.id)}
-                                className="w-6 h-6 rounded-lg bg-slate-800 active:bg-slate-700 flex items-center justify-center font-bold text-white text-xs"
-                              >
-                                -
-                              </button>
-                              <span className="text-xs font-bold text-amber-400 w-4 text-center">
-                                {cartItem.quantity}
-                              </span>
-                              <button
-                                onClick={() => addToCart(p)}
-                                className="w-6 h-6 rounded-lg bg-amber-500 active:bg-amber-400 flex items-center justify-center font-bold text-slate-950 text-xs"
-                              >
-                                +
-                              </button>
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => addToCart(p)}
-                              className="px-3.5 py-1.5 rounded-xl bg-amber-500 active:scale-95 text-slate-950 font-bold text-xs flex items-center gap-1 shadow-md shadow-amber-500/10 transition-transform"
-                            >
-                              <span>+</span> Qo'shish
-                            </button>
-                          )}
-                        </div>
-                      </div>
+                      ) : (
+                        <span className="text-4xl">🍔</span>
+                      )}
                     </div>
-                  );
-                })}
-              </div>
-            )}
-          </>
-        )}
 
-        {/* 5. Savat va Buyurtma berish oynasi */}
-        {activeTab === 'cart' && (
-          <div className="space-y-4">
-            <h2 className="text-base font-bold text-amber-400">Savatchangiz</h2>
+                    {/* Nomi va Tavsifi */}
+                    <div className="flex-1 flex flex-col justify-start">
+                      <h3 className="text-xs font-black text-slate-900 leading-snug line-clamp-2 min-h-[32px]">
+                        {prod.name}
+                      </h3>
+                      {prod.description && (
+                        <p className="text-[10px] text-slate-400 line-clamp-1 mt-0.5">
+                          {prod.description}
+                        </p>
+                      )}
+                    </div>
 
-            {cart.length === 0 ? (
-              <div className="text-center py-16 bg-slate-900/40 rounded-2xl border border-slate-800 p-6">
-                <div className="text-3xl mb-2">🛒</div>
-                <p className="text-xs text-slate-400">Savatchangiz hozircha bo'sh</p>
-                <button
-                  onClick={() => setActiveTab('menu')}
-                  className="mt-4 px-4 py-2 bg-amber-500 text-slate-950 rounded-xl text-xs font-bold"
-                >
-                  Menyuga qaytish
-                </button>
-              </div>
-            ) : (
-              <>
-                <div className="space-y-2">
-                  {cart.map((item) => (
-                    <div
-                      key={item.id}
-                      className="bg-slate-900 border border-slate-800/80 p-3 rounded-xl flex items-center justify-between"
-                    >
-                      <div className="min-w-0">
-                        <h4 className="text-xs font-bold text-white truncate">{item.name}</h4>
-                        <span className="text-[11px] text-amber-400">
-                          {Number(item.price).toLocaleString()} so'm
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
+                    {/* Narxi (EVOS uslubida qalin va ko'zga tashlanadigan) */}
+                    <div className="mt-2 mb-2.5">
+                      <span className="text-sm font-black text-slate-950 block">
+                        {Number(prod.price).toLocaleString()} <span className="text-xs font-bold text-slate-600">so'm</span>
+                      </span>
+                    </div>
+
+                    {/* Tugma: "Savatchaga" yoki sonini o'zgartirish (- 1 +) */}
+                    {qty === 0 ? (
+                      <button
+                        onClick={() => addToCart(prod)}
+                        className="w-full py-2 rounded-2xl bg-slate-100 hover:bg-orange-50 active:scale-95 text-slate-800 hover:text-orange-600 text-xs font-black transition-all flex items-center justify-center space-x-1"
+                      >
+                        <span>Savatchaga</span>
+                      </button>
+                    ) : (
+                      <div className="w-full flex items-center justify-between bg-orange-500 rounded-2xl p-1 text-white shadow-md shadow-orange-500/20">
                         <button
-                          onClick={() => removeFromCart(item.id)}
-                          className="w-6 h-6 rounded-lg bg-slate-800 text-white font-bold text-xs flex items-center justify-center"
+                          onClick={() => updateQuantity(prod.id, -1)}
+                          className="w-7 h-7 rounded-xl bg-white/20 active:scale-90 flex items-center justify-center font-black text-sm"
                         >
                           -
                         </button>
-                        <span className="text-xs font-bold w-4 text-center">{item.quantity}</span>
+                        <span className="text-xs font-black">{qty}</span>
                         <button
-                          onClick={() => addToCart(item)}
-                          className="w-6 h-6 rounded-lg bg-amber-500 text-slate-950 font-bold text-xs flex items-center justify-center"
+                          onClick={() => updateQuantity(prod.id, 1)}
+                          className="w-7 h-7 rounded-xl bg-white/20 active:scale-90 flex items-center justify-center font-black text-sm"
                         >
                           +
                         </button>
                       </div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Buyurtma formasi */}
-                <form onSubmit={handleCheckout} className="bg-slate-900/90 border border-slate-800 p-4 rounded-2xl space-y-3">
-                  <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider">Yetkazib berish ma'lumotlari</h3>
-                  <div>
-                    <label className="text-[11px] text-slate-400 block mb-1">Ismingiz</label>
-                    <input
-                      type="text"
-                      required
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      placeholder="Masalan: Sardor"
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
-                    />
+                    )}
                   </div>
-                  <div>
-                    <label className="text-[11px] text-slate-400 block mb-1">Telefon raqam</label>
-                    <input
-                      type="tel"
-                      required
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      placeholder="+998 90 123 45 67"
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[11px] text-slate-400 block mb-1">Manzil (Ko'cha, xonadon)</label>
-                    <textarea
-                      required
-                      value={address}
-                      onChange={(e) => setAddress(e.target.value)}
-                      placeholder="Chilonzor 9-mavze, 12-uy..."
-                      rows="2"
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
-                    ></textarea>
-                  </div>
-
-                  <div className="pt-2 border-t border-slate-800 flex justify-between items-center">
-                    <span className="text-xs text-slate-400">Jami to'lov:</span>
-                    <span className="text-base font-black text-amber-400">
-                      {totalPrice.toLocaleString()} so'm
-                    </span>
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={isSubmitting}
-                    className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 active:scale-95 text-slate-950 font-black text-xs uppercase tracking-wider shadow-lg shadow-amber-500/20 disabled:opacity-50 transition-transform"
-                  >
-                    {isSubmitting ? "Yuborilmoqda..." : "Buyurtmani tasdiqlash"}
-                  </button>
-                </form>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* 6. Admin Paneli */}
-        {activeTab === 'admin' && <Admin />}
-      </main>
-
-      {/* 7. Pastdan Suzuvchi Buyurtma Paneli (Floating Bar - agar savatda taom bo'lsa) */}
-      {activeTab === 'menu' && totalItems > 0 && (
-        <div className="fixed bottom-16 left-0 right-0 max-w-md mx-auto px-4 z-20 animate-fade-in-up">
-          <div
-            onClick={() => {
-              triggerHaptic('medium');
-              setActiveTab('cart');
-            }}
-            className="cursor-pointer bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 rounded-2xl px-4 py-3 shadow-xl shadow-amber-500/20 flex items-center justify-between active:scale-98 transition-transform"
-          >
-            <div className="flex items-center gap-2">
-              <span className="w-6 h-6 rounded-full bg-slate-950 text-amber-400 text-xs font-black flex items-center justify-center">
-                {totalItems}
-              </span>
-              <span className="text-xs font-black uppercase tracking-wide">Buyurtma berish</span>
+                );
+              })}
             </div>
-            <span className="text-xs font-black">{totalPrice.toLocaleString()} so'm ➔</span>
-          </div>
+          )}
+        </main>
+      )}
+
+      {/* Savat Tab */}
+      {activeTab === 'cart' && (
+        <main className="px-4 pt-4 flex-1">
+          <h2 className="text-base font-black text-slate-900 mb-3">🛒 Savatchadagi taomlar</h2>
+          {cart.length === 0 ? (
+            <div className="text-center py-20 bg-white rounded-3xl border border-slate-100 p-6">
+              <span className="text-4xl">🛍️</span>
+              <p className="text-xs text-slate-500 font-bold mt-2">Savatchangiz bo'sh</p>
+              <button
+                onClick={() => { triggerHaptic('light'); setActiveTab('menu'); }}
+                className="mt-4 px-5 py-2.5 rounded-2xl bg-orange-500 text-white text-xs font-black shadow-md shadow-orange-500/20"
+              >
+                Menyudan tanlash
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="bg-white rounded-3xl p-3 border border-slate-100 space-y-2.5 shadow-sm">
+                {cart.map(item => (
+                  <div key={item.id} className="flex items-center justify-between py-1 border-b border-slate-50 last:border-0">
+                    <div>
+                      <h4 className="text-xs font-black text-slate-800">{item.name}</h4>
+                      <p className="text-xs font-bold text-orange-600">{Number(item.price).toLocaleString()} so'm</p>
+                    </div>
+                    <div className="flex items-center space-x-2 bg-slate-100 rounded-xl px-2 py-1">
+                      <button onClick={() => updateQuantity(item.id, -1)} className="font-bold text-slate-600 px-1.5">-</button>
+                      <span className="text-xs font-black text-slate-900 w-4 text-center">{item.quantity}</span>
+                      <button onClick={() => updateQuantity(item.id, 1)} className="font-bold text-orange-600 px-1.5">+</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Form */}
+              <form onSubmit={handleCheckout} className="bg-white rounded-3xl p-4 border border-slate-100 shadow-sm space-y-3">
+                <h3 className="text-xs font-black text-slate-900 uppercase">Yetkazib berish manzili</h3>
+                <input
+                  type="text"
+                  placeholder="Ismingiz"
+                  value={customerName}
+                  onChange={e => setCustomerName(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-orange-500"
+                />
+                <input
+                  type="tel"
+                  placeholder="Telefon raqam (+998...)"
+                  value={customerPhone}
+                  onChange={e => setCustomerPhone(e.target.value)}
+                  required
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-orange-500"
+                />
+                <textarea
+                  placeholder="Aniq manzil (Ko'cha, xonadon, mo'ljal)"
+                  value={customerAddress}
+                  onChange={e => setCustomerAddress(e.target.value)}
+                  required
+                  rows="2"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-orange-500 resize-none"
+                />
+                <div className="pt-2 border-t border-slate-100 flex justify-between items-center">
+                  <span className="text-xs text-slate-500 font-bold">Jami summa:</span>
+                  <span className="text-base font-black text-slate-950">{totalAmount.toLocaleString()} so'm</span>
+                </div>
+                <button
+                  type="submit"
+                  className="w-full py-3 rounded-2xl bg-orange-500 hover:bg-orange-600 text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-orange-500/25 active:scale-95 transition-all"
+                >
+                  Buyurtmani tasdiqlash 🚀
+                </button>
+              </form>
+            </div>
+          )}
+        </main>
+      )}
+
+      {/* Qalqib chiquvchi Savat Paneli (Floating Bar) */}
+      {activeTab === 'menu' && totalCount > 0 && (
+        <div className="fixed bottom-20 inset-x-4 z-40">
+          <button
+            onClick={() => { triggerHaptic('medium'); setActiveTab('cart'); }}
+            className="w-full bg-orange-500 active:scale-95 text-white font-black py-3 px-4 rounded-2xl shadow-xl shadow-orange-500/30 flex items-center justify-between transition-transform"
+          >
+            <div className="flex items-center space-x-2">
+              <span className="bg-white/20 px-2 py-0.5 rounded-lg text-xs">{totalCount} ta</span>
+              <span className="text-xs uppercase tracking-wide">Savatga o'tish</span>
+            </div>
+            <span className="text-sm">{totalAmount.toLocaleString()} so'm ➔</span>
+          </button>
         </div>
       )}
 
-      {/* 8. Pastki Navigatsiya (Bottom Navigation Bar) */}
-      <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-slate-950/90 backdrop-blur-lg border-t border-slate-800/80 px-6 py-2.5 flex justify-between items-center z-30">
+      {/* 5. Pastki Navigatsiya Menyu (Aynan EVOS nusxasi: Menyu | Savat | Aksiyalar | Profil) */}
+      <nav className="fixed bottom-0 inset-x-0 bg-white/90 backdrop-blur-xl border-t border-slate-100 px-6 py-2 flex justify-around items-center z-50 shadow-[0_-4px_20px_rgba(0,0,0,0.03)]">
         <button
-          onClick={() => {
-            triggerHaptic('light');
-            setActiveTab('menu');
-          }}
-          className={`flex flex-col items-center gap-1 text-[11px] font-bold transition-colors ${
-            activeTab === 'menu' ? 'text-amber-400' : 'text-slate-500 hover:text-slate-400'
+          onClick={() => { triggerHaptic('light'); setActiveTab('menu'); }}
+          className={`flex flex-col items-center space-y-0.5 active:scale-90 transition-transform ${
+            activeTab === 'menu' ? 'text-orange-600 font-black' : 'text-slate-400 font-medium'
           }`}
         >
-          <span className="text-lg">🍔</span>
-          Asosiy
+          <span className="text-lg">🏠</span>
+          <span className="text-[10px]">Menyu</span>
         </button>
 
         <button
-          onClick={() => {
-            triggerHaptic('light');
-            setActiveTab('cart');
-          }}
-          className={`relative flex flex-col items-center gap-1 text-[11px] font-bold transition-colors ${
-            activeTab === 'cart' ? 'text-amber-400' : 'text-slate-500 hover:text-slate-400'
+          onClick={() => { triggerHaptic('light'); setActiveTab('cart'); }}
+          className={`flex flex-col items-center space-y-0.5 relative active:scale-90 transition-transform ${
+            activeTab === 'cart' ? 'text-orange-600 font-black' : 'text-slate-400 font-medium'
           }`}
         >
-          <span className="text-lg">🛍️</span>
-          Savat
-          {totalItems > 0 && (
-            <span className="absolute -top-1 right-1 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center animate-bounce">
-              {totalItems}
+          <span className="text-lg">🛒</span>
+          <span className="text-[10px]">Savat</span>
+          {totalCount > 0 && (
+            <span className="absolute -top-1 -right-2 bg-orange-500 text-white text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center">
+              {totalCount}
             </span>
           )}
         </button>
 
         <button
-          onClick={() => {
-            triggerHaptic('light');
-            setActiveTab('admin');
-          }}
-          className={`flex flex-col items-center gap-1 text-[11px] font-bold transition-colors ${
-            activeTab === 'admin' ? 'text-amber-400' : 'text-slate-500 hover:text-slate-400'
-          }`}
+          onClick={() => { triggerHaptic('light'); alert("Tez kunda yangi aksiyalar qo'shiladi!"); }}
+          className="flex flex-col items-center space-y-0.5 text-slate-400 font-medium active:scale-90 transition-transform"
         >
-          <span className="text-lg">🛡️</span>
-          Admin
+          <span className="text-lg">⚡</span>
+          <span className="text-[10px]">Aksiyalar</span>
+        </button>
+
+        <button
+          onClick={() => { triggerHaptic('light'); alert("Admin bilan bog'lanish: @fogo_admin"); }}
+          className="flex flex-col items-center space-y-0.5 text-slate-400 font-medium active:scale-90 transition-transform"
+        >
+          <span className="text-lg">👤</span>
+          <span className="text-[10px]">Yana</span>
         </button>
       </nav>
 
-      {/* Muvaffaqiyatli buyurtma oynasi (Modal) */}
+      {/* Muvaffaqiyat modali */}
       {orderSuccess && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl max-w-xs w-full text-center space-y-3 animate-scale-up">
-            <div className="w-14 h-14 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mx-auto text-2xl">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white p-6 rounded-3xl max-w-xs w-full text-center space-y-3 shadow-2xl">
+            <div className="w-14 h-14 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto text-2xl font-bold">
               ✓
             </div>
-            <h3 className="text-base font-black text-white">Buyurtma qabul qilindi!</h3>
-            <p className="text-xs text-slate-400 leading-relaxed">
-              Tez orada kuryerimiz siz bilan bog'lanadi. Mazali taomlar tayyorlanmoqda!
+            <h3 className="text-base font-black text-slate-900">Buyurtma qabul qilindi!</h3>
+            <p className="text-xs text-slate-500">
+              Tez orada kuryerimiz siz bilan bog'lanadi. Xaridingiz uchun rahmat!
             </p>
             <button
               onClick={() => {
@@ -480,9 +443,9 @@ export default function App() {
                 setOrderSuccess(false);
                 setActiveTab('menu');
               }}
-              className="w-full py-2.5 rounded-xl bg-amber-500 text-slate-950 font-bold text-xs"
+              className="w-full py-2.5 rounded-2xl bg-orange-500 text-white font-bold text-xs shadow-md shadow-orange-500/20 active:scale-95 transition-all"
             >
-              Tushunarli
+              OK
             </button>
           </div>
         </div>
