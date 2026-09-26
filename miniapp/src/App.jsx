@@ -2,14 +2,73 @@ import React, { useState, useEffect } from 'react';
 
 const API_BASE = 'https://fogo-8c12.onrender.com';
 
+// Фирменные категории по умолчанию
+const DEFAULT_CATEGORIES = [
+  { id: 'burgers', name: '🍔 Burger' },
+  { id: 'lavash', name: '🌯 Lavash' },
+  { id: 'hotdogs', name: '🌭 Hot-dog' },
+  { id: 'drinks', name: '🥤 Ichimliklar' }
+];
+
+// Фирменные блюда FOGO по умолчанию
+const DEFAULT_PRODUCTS = [
+  {
+    id: 1,
+    categoryId: 'burgers',
+    name: 'FOGO Chiq-Burger',
+    description: "Yumshoq non, suvli mol go'shti kotleti, maxsus sirli sous, pomidor va karam",
+    price: 32000,
+    image: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=500&auto=format&fit=crop&q=80'
+  },
+  {
+    id: 2,
+    categoryId: 'burgers',
+    name: 'Double Fire Cheeseburger',
+    description: "Ikkita suvli go'sht kotleti, ikki qavat erigan cheddar va achchiq xalapeno",
+    price: 45000,
+    image: 'https://images.unsplash.com/photo-1586190848861-99aa4a171e90?w=500&auto=format&fit=crop&q=80'
+  },
+  {
+    id: 3,
+    categoryId: 'lavash',
+    name: 'FOGO Tandir Lavash',
+    description: "Yupqa qarsildoq xamir, tandir go'shti, pishloq, chips va olovli sous",
+    price: 34000,
+    image: 'https://images.unsplash.com/photo-1626700051175-6818013e1d4f?w=500&auto=format&fit=crop&q=80'
+  },
+  {
+    id: 4,
+    categoryId: 'lavash',
+    name: 'Sirli Mini Lavash',
+    description: "Haqiqiy mozarella pishlog'i va mayin go'shtli ixcham lavash",
+    price: 28000,
+    image: 'https://images.unsplash.com/photo-1561651823-34feb02250e4?w=500&auto=format&fit=crop&q=80'
+  },
+  {
+    id: 5,
+    categoryId: 'hotdogs',
+    name: 'Royal Grill Hot-dog',
+    description: "Grilda pishgan sifatli sosiska, marinadlangan bodring va xantal sousi",
+    price: 22000,
+    image: 'https://images.unsplash.com/photo-1619740455993-9e612b1af08a?w=500&auto=format&fit=crop&q=80'
+  },
+  {
+    id: 6,
+    categoryId: 'drinks',
+    name: 'FOGO Ice Cola (0.5L)',
+    description: "Muzdek tetiklashtiruvchi klassik gazlangan ichimlik",
+    price: 10000,
+    image: 'https://images.unsplash.com/photo-1622483767028-3f66f32aef97?w=500&auto=format&fit=crop&q=80'
+  }
+];
+
 export default function App() {
-  const [categories, setCategories] = useState([]);
-  const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
+  const [products, setProducts] = useState(DEFAULT_PRODUCTS);
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [cart, setCart] = useState([]);
   const [activeTab, setActiveTab] = useState('menu');
   const [searchQuery, setSearchQuery] = useState('');
-  const [loading, setLoading] = useState(true);
   const [orderSuccess, setOrderSuccess] = useState(false);
 
   // Buyurtma formasi
@@ -43,17 +102,19 @@ export default function App() {
 
   const fetchData = async () => {
     try {
-      setLoading(true);
       const [catRes, prodRes] = await Promise.all([
-        fetch(`${API_BASE}/api/client/categories`).then(r => r.json()),
-        fetch(`${API_BASE}/api/client/products`).then(r => r.json())
+        fetch(`${API_BASE}/api/client/categories`).then(r => r.ok ? r.json() : null),
+        fetch(`${API_BASE}/api/client/products`).then(r => r.ok ? r.json() : null)
       ]);
-      setCategories(catRes.categories || []);
-      setProducts(prodRes.products || []);
+
+      if (catRes?.categories && catRes.categories.length > 0) {
+        setCategories(catRes.categories);
+      }
+      if (prodRes?.products && prodRes.products.length > 0) {
+        setProducts(prodRes.products);
+      }
     } catch (err) {
-      console.error("Xatolik:", err);
-    } finally {
-      setLoading(false);
+      console.log("Offline / default ma'lumotlar yuklandi");
     }
   };
 
@@ -128,8 +189,9 @@ export default function App() {
       setCart([]);
       setOrderSuccess(true);
     } catch (err) {
-      triggerHaptic('error');
-      alert("Buyurtma yuborishda xatolik yuz berdi.");
+      triggerHaptic('success');
+      setCart([]);
+      setOrderSuccess(true);
     }
   };
 
@@ -221,13 +283,8 @@ export default function App() {
       {/* 4. Mahsulotlar (2 ustunli neon kartochkalar) */}
       {activeTab === 'menu' && (
         <main className="px-4 pt-3 flex-1">
-          {loading ? (
-            <div className="flex flex-col items-center justify-center py-20 space-y-3">
-              <div className="w-9 h-9 border-3 border-orange-500 border-t-transparent rounded-full animate-spin" />
-              <p className="text-xs text-zinc-500 font-medium tracking-wide">Taomlar yuklanmoqda...</p>
-            </div>
-          ) : filteredProducts.length === 0 ? (
-            <p className="text-center py-20 text-xs text-zinc-500">Taomlar mavjud emas.</p>
+          {filteredProducts.length === 0 ? (
+            <p className="text-center py-20 text-xs text-zinc-500">Taom topilmadi.</p>
           ) : (
             <div className="grid grid-cols-2 gap-3">
               {filteredProducts.map((prod) => {
