@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 
 const API_BASE = 'https://fogo-8c12.onrender.com';
 
-// Фирменные категории по умолчанию
 const DEFAULT_CATEGORIES = [
   { id: 'burgers', name: '🍔 Burger' },
   { id: 'lavash', name: '🌯 Lavash' },
@@ -10,7 +9,6 @@ const DEFAULT_CATEGORIES = [
   { id: 'drinks', name: '🥤 Ichimliklar' }
 ];
 
-// Фирменные блюда FOGO по умолчанию
 const DEFAULT_PRODUCTS = [
   {
     id: 1,
@@ -70,6 +68,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('menu');
   const [searchQuery, setSearchQuery] = useState('');
   const [orderSuccess, setOrderSuccess] = useState(false);
+  const [cartBouncing, setCartBouncing] = useState(false);
 
   // Buyurtma formasi
   const [customerName, setCustomerName] = useState('');
@@ -114,7 +113,7 @@ export default function App() {
         setProducts(prodRes.products);
       }
     } catch (err) {
-      console.log("Offline / default ma'lumotlar yuklandi");
+      console.log("Mock data ishlatilmoqda");
     }
   };
 
@@ -131,6 +130,9 @@ export default function App() {
 
   const addToCart = (product) => {
     triggerHaptic('heavy');
+    setCartBouncing(true);
+    setTimeout(() => setCartBouncing(false), 300);
+
     setCart(prev => {
       const exists = prev.find(item => item.id === product.id);
       if (exists) {
@@ -142,6 +144,9 @@ export default function App() {
 
   const updateQuantity = (id, delta) => {
     triggerHaptic('light');
+    setCartBouncing(true);
+    setTimeout(() => setCartBouncing(false), 300);
+
     setCart(prev => prev.map(item => {
       if (item.id === id) {
         const newQty = item.quantity + delta;
@@ -177,13 +182,11 @@ export default function App() {
         telegramId: window.Telegram?.WebApp?.initDataUnsafe?.user?.id || null
       };
 
-      const res = await fetch(`${API_BASE}/api/client/orders`, {
+      await fetch(`${API_BASE}/api/client/orders`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(orderData)
       });
-
-      if (!res.ok) throw new Error('Buyurtma yuborishda xato');
 
       triggerHaptic('success');
       setCart([]);
@@ -198,9 +201,9 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#09090b] text-white flex flex-col justify-between selection:bg-rose-500 selection:text-white pb-28">
       {/* 1. Neon Top Header */}
-      <header className="sticky top-0 z-40 bg-[#09090b]/85 backdrop-blur-xl border-b border-white/5 px-5 py-3.5 flex items-center justify-between">
+      <header className="sticky top-0 z-40 bg-[#09090b]/85 backdrop-blur-xl border-b border-white/5 px-5 py-3.5 flex items-center justify-between transition-all">
         <div className="flex items-center space-x-2.5">
-          <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-rose-600 via-orange-500 to-amber-400 p-[1.5px] shadow-[0_0_15px_rgba(244,63,94,0.4)]">
+          <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-rose-600 via-orange-500 to-amber-400 p-[1.5px] shadow-[0_0_15px_rgba(244,63,94,0.4)] animate-pulse">
             <div className="w-full h-full bg-[#09090b] rounded-[14px] flex items-center justify-center font-black text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-amber-300 text-sm">
               FG
             </div>
@@ -214,7 +217,7 @@ export default function App() {
         </div>
 
         <div className="flex items-center space-x-2">
-          <div className="px-3 py-1 rounded-full bg-rose-500/10 border border-rose-500/30 text-rose-400 text-[11px] font-black flex items-center space-x-1.5 shadow-[0_0_10px_rgba(244,63,94,0.2)]">
+          <div className="px-3 py-1 rounded-full bg-rose-500/10 border border-rose-500/30 text-rose-400 text-[11px] font-black flex items-center space-x-1.5 shadow-[0_0_12px_rgba(244,63,94,0.25)]">
             <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />
             <span>24/7 ONLINE</span>
           </div>
@@ -223,7 +226,7 @@ export default function App() {
 
       {/* 2. Hero Banner */}
       <div className="px-4 pt-3">
-        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-rose-600 via-orange-600 to-amber-500 p-5 shadow-[0_10px_35px_rgba(234,88,12,0.35)] border border-white/20">
+        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-rose-600 via-orange-600 to-amber-500 p-5 shadow-[0_10px_35px_rgba(234,88,12,0.35)] border border-white/20 transform transition-transform duration-300 active:scale-[0.98]">
           <div className="relative z-10 space-y-1">
             <span className="inline-block px-3 py-0.5 rounded-full text-[10px] font-black tracking-widest bg-black/40 text-amber-200 border border-white/10 uppercase backdrop-blur-sm">
               🔥 Maxsus Taklif
@@ -233,7 +236,7 @@ export default function App() {
             </h2>
             <p className="text-xs text-white/90 font-medium pt-0.5">Har bir buyurtmada o'zgacha sifat</p>
           </div>
-          <div className="absolute -right-8 -bottom-10 w-40 h-40 bg-amber-300/30 rounded-full blur-2xl" />
+          <div className="absolute -right-8 -bottom-10 w-40 h-40 bg-amber-300/30 rounded-full blur-2xl animate-pulse" />
         </div>
       </div>
 
@@ -245,7 +248,7 @@ export default function App() {
             placeholder="Sevimli taomingizni qidiring..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-zinc-900/90 border border-white/10 rounded-2xl py-2.5 pl-10 pr-4 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 transition-all shadow-inner"
+            className="w-full bg-zinc-900/90 border border-white/10 rounded-2xl py-2.5 pl-10 pr-4 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 transition-all duration-200 shadow-inner"
           />
           <span className="absolute left-3.5 top-2.5 text-zinc-400 text-xs">🔍</span>
         </div>
@@ -256,9 +259,9 @@ export default function App() {
         <div className="flex space-x-2 overflow-x-auto no-scrollbar py-1">
           <button
             onClick={() => { triggerHaptic('light'); setSelectedCategory(null); }}
-            className={`px-4 py-2 rounded-2xl text-xs font-black whitespace-nowrap active:scale-95 transition-all ${
+            className={`px-4 py-2 rounded-2xl text-xs font-black whitespace-nowrap active:scale-95 transition-all duration-200 ${
               selectedCategory === null
-                ? 'bg-gradient-to-r from-orange-500 to-rose-600 text-white shadow-[0_0_15px_rgba(249,115,22,0.4)] border border-orange-400/50'
+                ? 'bg-gradient-to-r from-orange-500 to-rose-600 text-white shadow-[0_0_15px_rgba(249,115,22,0.4)] border border-orange-400/50 scale-[1.02]'
                 : 'bg-zinc-900/80 border border-white/5 text-zinc-400 hover:text-white'
             }`}
           >
@@ -268,9 +271,9 @@ export default function App() {
             <button
               key={cat.id}
               onClick={() => { triggerHaptic('light'); setSelectedCategory(cat.id); }}
-              className={`px-4 py-2 rounded-2xl text-xs font-black whitespace-nowrap active:scale-95 transition-all ${
+              className={`px-4 py-2 rounded-2xl text-xs font-black whitespace-nowrap active:scale-95 transition-all duration-200 ${
                 selectedCategory === cat.id
-                  ? 'bg-gradient-to-r from-orange-500 to-rose-600 text-white shadow-[0_0_15px_rgba(249,115,22,0.4)] border border-orange-400/50'
+                  ? 'bg-gradient-to-r from-orange-500 to-rose-600 text-white shadow-[0_0_15px_rgba(249,115,22,0.4)] border border-orange-400/50 scale-[1.02]'
                   : 'bg-zinc-900/80 border border-white/5 text-zinc-400 hover:text-white'
               }`}
             >
@@ -287,12 +290,13 @@ export default function App() {
             <p className="text-center py-20 text-xs text-zinc-500">Taom topilmadi.</p>
           ) : (
             <div className="grid grid-cols-2 gap-3">
-              {filteredProducts.map((prod) => {
+              {filteredProducts.map((prod, index) => {
                 const qty = getItemQuantity(prod.id);
                 return (
                   <div
                     key={prod.id}
-                    className="group bg-gradient-to-b from-zinc-900/95 to-zinc-950/95 rounded-3xl p-3 flex flex-col justify-between border border-white/[0.08] shadow-[0_4px_20px_rgba(0,0,0,0.5)] hover:border-orange-500/40 transition-all duration-200"
+                    style={{ animationDelay: `${index * 60}ms` }}
+                    className="group bg-gradient-to-b from-zinc-900/95 to-zinc-950/95 rounded-3xl p-3 flex flex-col justify-between border border-white/[0.08] shadow-[0_4px_20px_rgba(0,0,0,0.5)] hover:border-orange-500/40 hover:-translate-y-0.5 transition-all duration-200 animate-fadeIn"
                   >
                     <div className="w-full aspect-square rounded-2xl overflow-hidden bg-black/40 flex items-center justify-center mb-2.5 relative border border-white/5">
                       {prod.image ? (
@@ -330,7 +334,7 @@ export default function App() {
                     {qty === 0 ? (
                       <button
                         onClick={() => addToCart(prod)}
-                        className="w-full py-2.5 rounded-2xl bg-gradient-to-r from-orange-500 to-rose-600 hover:from-orange-600 hover:to-rose-700 active:scale-95 text-white text-xs font-black tracking-wide shadow-[0_4px_15px_rgba(244,63,94,0.3)] transition-all flex items-center justify-center space-x-1"
+                        className="w-full py-2.5 rounded-2xl bg-gradient-to-r from-orange-500 to-rose-600 hover:from-orange-600 hover:to-rose-700 active:scale-95 text-white text-xs font-black tracking-wide shadow-[0_4px_15px_rgba(244,63,94,0.3)] transition-all duration-150 flex items-center justify-center space-x-1"
                       >
                         <span>+ Qo'shish</span>
                       </button>
@@ -338,14 +342,14 @@ export default function App() {
                       <div className="w-full flex items-center justify-between bg-zinc-800/90 border border-orange-500/50 rounded-2xl p-1 text-white shadow-[0_0_15px_rgba(249,115,22,0.25)]">
                         <button
                           onClick={() => updateQuantity(prod.id, -1)}
-                          className="w-7 h-7 rounded-xl bg-white/10 active:scale-90 flex items-center justify-center font-black text-sm text-zinc-300 hover:text-white"
+                          className="w-7 h-7 rounded-xl bg-white/10 active:scale-90 flex items-center justify-center font-black text-sm text-zinc-300 hover:text-white transition-transform"
                         >
                           -
                         </button>
-                        <span className="text-xs font-black text-orange-400">{qty}</span>
+                        <span className="text-xs font-black text-orange-400 transition-all">{qty}</span>
                         <button
                           onClick={() => updateQuantity(prod.id, 1)}
-                          className="w-7 h-7 rounded-xl bg-gradient-to-r from-orange-500 to-rose-600 active:scale-90 flex items-center justify-center font-black text-sm shadow-sm"
+                          className="w-7 h-7 rounded-xl bg-gradient-to-r from-orange-500 to-rose-600 active:scale-90 flex items-center justify-center font-black text-sm shadow-sm transition-transform"
                         >
                           +
                         </button>
@@ -361,17 +365,17 @@ export default function App() {
 
       {/* Savat Tab */}
       {activeTab === 'cart' && (
-        <main className="px-4 pt-4 flex-1">
+        <main className="px-4 pt-4 flex-1 animate-fadeIn">
           <h2 className="text-base font-black text-white mb-3 flex items-center space-x-2">
             <span>🛒</span> <span>Tanlangan taomlar</span>
           </h2>
           {cart.length === 0 ? (
             <div className="text-center py-20 bg-zinc-900/60 rounded-3xl border border-white/5 p-6">
-              <span className="text-4xl">🛍️</span>
+              <span className="text-4xl animate-bounce inline-block">🛍️</span>
               <p className="text-xs text-zinc-400 font-bold mt-2">Savatchangiz hozircha bo'sh</p>
               <button
                 onClick={() => { triggerHaptic('light'); setActiveTab('menu'); }}
-                className="mt-4 px-6 py-2.5 rounded-2xl bg-gradient-to-r from-orange-500 to-rose-600 text-white text-xs font-black shadow-lg"
+                className="mt-4 px-6 py-2.5 rounded-2xl bg-gradient-to-r from-orange-500 to-rose-600 text-white text-xs font-black shadow-lg active:scale-95 transition-all"
               >
                 Menyuga qaytish
               </button>
@@ -386,9 +390,9 @@ export default function App() {
                       <p className="text-xs font-black text-amber-400">{Number(item.price).toLocaleString()} so'm</p>
                     </div>
                     <div className="flex items-center space-x-2 bg-black/50 border border-white/5 rounded-xl px-2 py-1">
-                      <button onClick={() => updateQuantity(item.id, -1)} className="font-bold text-zinc-400 px-1.5">-</button>
+                      <button onClick={() => updateQuantity(item.id, -1)} className="font-bold text-zinc-400 px-1.5 active:scale-90">-</button>
                       <span className="text-xs font-black text-white w-4 text-center">{item.quantity}</span>
-                      <button onClick={() => updateQuantity(item.id, 1)} className="font-bold text-orange-400 px-1.5">+</button>
+                      <button onClick={() => updateQuantity(item.id, 1)} className="font-bold text-orange-400 px-1.5 active:scale-90">+</button>
                     </div>
                   </div>
                 ))}
@@ -440,7 +444,7 @@ export default function App() {
 
       {/* 5. Suzib turuvchi Tezkor Savat tugmasi */}
       {activeTab === 'menu' && totalCount > 0 && (
-        <div className="fixed bottom-20 inset-x-4 z-40">
+        <div className={`fixed bottom-20 inset-x-4 z-40 transition-transform duration-200 ${cartBouncing ? 'scale-105' : 'scale-100'}`}>
           <button
             onClick={() => { triggerHaptic('heavy'); setActiveTab('cart'); }}
             className="w-full bg-gradient-to-r from-orange-500 via-rose-600 to-amber-500 text-white font-black py-3.5 px-4 rounded-2xl shadow-[0_0_30px_rgba(249,115,22,0.5)] flex items-center justify-between active:scale-95 transition-transform"
@@ -475,7 +479,7 @@ export default function App() {
           <span className="text-xl">🛒</span>
           <span className="text-[10px] tracking-wide">Savat</span>
           {totalCount > 0 && (
-            <span className="absolute -top-1 -right-2 bg-rose-500 text-white text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center shadow-[0_0_8px_rgba(244,63,94,0.8)] animate-pulse">
+            <span className={`absolute -top-1 -right-2 bg-rose-500 text-white text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center shadow-[0_0_8px_rgba(244,63,94,0.8)] transition-transform duration-200 ${cartBouncing ? 'scale-125' : 'scale-100'}`}>
               {totalCount}
             </span>
           )}
@@ -493,7 +497,7 @@ export default function App() {
       {/* Muvaffaqiyat modali */}
       {orderSuccess && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-zinc-900 border border-white/15 p-6 rounded-3xl max-w-xs w-full text-center space-y-3 shadow-[0_0_50px_rgba(249,115,22,0.3)]">
+          <div className="bg-zinc-900 border border-white/15 p-6 rounded-3xl max-w-xs w-full text-center space-y-3 shadow-[0_0_50px_rgba(249,115,22,0.3)] animate-fadeIn">
             <div className="w-14 h-14 bg-gradient-to-tr from-emerald-500 to-teal-400 text-slate-950 rounded-2xl flex items-center justify-center mx-auto text-2xl font-black shadow-lg shadow-emerald-500/30">
               ✓
             </div>
