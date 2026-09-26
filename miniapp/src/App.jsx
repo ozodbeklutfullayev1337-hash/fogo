@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 
 const API_BASE = 'https://fogo-8c12.onrender.com';
 const ADMIN_ID = 6515742580; // Sizning Telegram ID raqamingiz
+const BOT_TOKEN = '8151821814:AAGqZ9pA3aD23k-f_5yYtE5-zD8o9rK1k90'; // Botingiz tokeni (yoki env)
 
 const DEFAULT_CATEGORIES = [
   { id: 'burgers', name: '🍔 Burger' },
@@ -10,7 +11,7 @@ const DEFAULT_CATEGORIES = [
   { id: 'drinks', name: '🥤 Ichimliklar' }
 ];
 
-const DEFAULT_PRODUCTS = [
+const INITIAL_PRODUCTS = [
   {
     id: 1,
     categoryId: 'burgers',
@@ -62,11 +63,17 @@ const DEFAULT_PRODUCTS = [
 ];
 
 export default function App() {
-  const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
-  const [products, setProducts] = useState(DEFAULT_PRODUCTS);
+  const [categories] = useState(DEFAULT_CATEGORIES);
+  
+  // 1. Taomlarni doimiy xotiradan (localStorage) yuklash: o'chib ketmaydi!
+  const [products, setProducts] = useState(() => {
+    const saved = localStorage.getItem('fogo_products');
+    return saved ? JSON.parse(saved) : INITIAL_PRODUCTS;
+  });
+
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [cart, setCart] = useState([]);
-  const [activeTab, setActiveTab] = useState('menu'); // 'menu' | 'cart' | 'bonus' | 'admin'
+  const [activeTab, setActiveTab] = useState('menu');
   const [searchQuery, setSearchQuery] = useState('');
   const [orderSuccess, setOrderSuccess] = useState(false);
   const [cartBouncing, setCartBouncing] = useState(false);
@@ -77,15 +84,28 @@ export default function App() {
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerAddress, setCustomerAddress] = useState('');
 
-  // Admin bo'limi uchun holatlar
-  const [adminOrders, setAdminOrders] = useState([]);
+  // Admin bo'limi
+  const [adminOrders, setAdminOrders] = useState(() => {
+    const savedOrders = localStorage.getItem('fogo_orders');
+    return savedOrders ? JSON.parse(savedOrders) : [];
+  });
   const [newProdName, setNewProdName] = useState('');
   const [newProdPrice, setNewProdPrice] = useState('');
   const [newProdCategory, setNewProdCategory] = useState('burgers');
   const [newProdImg, setNewProdImg] = useState('');
 
   const currentUserId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
-  const isAdmin = currentUserId === ADMIN_ID || !currentUserId; // Brauzerda test qilganda ham ruxsat beradi
+  const isAdmin = currentUserId === ADMIN_ID || !currentUserId;
+
+  // Har safar taom qo'shilganda yoki o'zgarganda xotirada saqlash
+  useEffect(() => {
+    localStorage.setItem('fogo_products', JSON.stringify(products));
+  }, [products]);
+
+  // Buyurtmalarni saqlash
+  useEffect(() => {
+    localStorage.setItem('fogo_orders', JSON.stringify(adminOrders));
+  }, [adminOrders]);
 
   const triggerHaptic = (style = 'medium') => {
     if (window.Telegram?.WebApp?.HapticFeedback) {
@@ -108,39 +128,9 @@ export default function App() {
         window.Telegram.WebApp.setBackgroundColor('#09090b');
       }
     }
-    fetchData();
   }, []);
 
-  const fetchData = async () => {
-    try {
-      const [catRes, prodRes] = await Promise.all([
-        fetch(`${API_BASE}/api/client/categories`).then(r => r.ok ? r.json() : null),
-        fetch(`${API_BASE}/api/client/products`).then(r => r.ok ? r.json() : null)
-      ]);
-
-      if (catRes?.categories && catRes.categories.length > 0) {
-        setCategories(catRes.categories);
-      }
-      if (prodRes?.products && prodRes.products.length > 0) {
-        setProducts(prodRes.products);
-      }
-    } catch (err) {
-      console.log("Mock data ishlatilmoqda");
-    }
-  };
-
-  const fetchAdminOrders = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/api/admin/orders`);
-      if (res.ok) {
-        const data = await res.json();
-        setAdminOrders(data.orders || []);
-      }
-    } catch (err) {
-      console.log("Admin buyurtmalarni olishda xato:", err);
-    }
-  };
-
+  // Yangi taom qo'shish (Doimiy saqlanadi!)
   const handleAddNewProduct = (e) => {
     e.preventDefault();
     if (!newProdName || !newProdPrice) return;
@@ -149,7 +139,7 @@ export default function App() {
       categoryId: newProdCategory,
       name: newProdName,
       price: Number(newProdPrice),
-      description: "Yangi qo'shilgan mazali taom",
+      description: "Yangi qo'shilgan olovli taom",
       image: newProdImg || 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=500'
     };
     setProducts(prev => [newProduct, ...prev]);
@@ -157,7 +147,15 @@ export default function App() {
     setNewProdPrice('');
     setNewProdImg('');
     triggerHaptic('success');
-    alert("Yangi taom menyuga muvaffaqiyatli qo'shildi!");
+    alert("Yangi taom muvaffaqiyatli qo'shildi va saqlandi!");
+  };
+
+  // Taomni menyudan o'chirish imkoniyati (Admin uchun)
+  const handleDeleteProduct = (id) => {
+    if (confirm("Rostdan ham ushbu taomni o'chirmoqchimisiz?")) {
+      setProducts(prev => prev.filter(p => p.id !== id));
+      triggerHaptic('warning');
+    }
   };
 
   const filteredProducts = products.filter(p => {
@@ -202,6 +200,7 @@ export default function App() {
   const totalAmount = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   const totalCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
+  // Buyurtmani yuborish va Adminga SMS/xabar yetkazish
   const handleCheckout = async (e) => {
     e.preventDefault();
     if (!customerPhone || !customerAddress) {
@@ -213,45 +212,39 @@ export default function App() {
     setLoading(true);
 
     const orderData = {
-      name: customerName || 'Foydalanuvchi',
+      id: Date.now().toString().slice(-4),
+      name: customerName || 'Mijoz',
       phone: customerPhone,
       address: customerAddress,
-      items: cart.map(item => ({
-        productId: item.id,
-        name: item.name,
-        price: item.price,
-        quantity: item.quantity
-      })),
+      items: cart,
       totalPrice: totalAmount,
-      telegramId: currentUserId || ADMIN_ID
+      date: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
 
-    try {
-      // 1. Render serveriga buyurtma yuborish
-      const res = await fetch(`${API_BASE}/api/client/orders`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(orderData)
-      });
+    // 1. Mahalliy admin buyurtmalariga saqlaymiz
+    setAdminOrders(prev => [orderData, ...prev]);
 
-      // 2. Agar Telegram WebApp ochiq bo'lsa, Telegram botga bevosita ma'lumot uzatish
+    // 2. Telegram WebApp orqali botga ma'lumot uzatamiz
+    try {
       if (window.Telegram?.WebApp?.sendData) {
         window.Telegram.WebApp.sendData(JSON.stringify(orderData));
       }
 
-      setAdminOrders(prev => [orderData, ...prev]);
-      triggerHaptic('success');
-      setCart([]);
-      setOrderSuccess(true);
-    } catch (err) {
-      // Offline fallback: baribir qabul qiladi
-      setAdminOrders(prev => [orderData, ...prev]);
-      triggerHaptic('success');
-      setCart([]);
-      setOrderSuccess(true);
-    } finally {
-      setLoading(false);
+      // Backend API'ga yuborish
+      fetch(`${API_BASE}/api/client/orders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(orderData)
+      }).catch(e => console.log(e));
+
+    } catch (e) {
+      console.log(e);
     }
+
+    triggerHaptic('success');
+    setCart([]);
+    setLoading(false);
+    setOrderSuccess(true);
   };
 
   return (
@@ -280,7 +273,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* 2. Hero Banner (Faqat Menyu ochilganda) */}
+      {/* 2. Hero Banner (Menyuda) */}
       {activeTab === 'menu' && (
         <div className="px-4 pt-3">
           <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-rose-600 via-orange-600 to-amber-500 p-5 shadow-[0_10px_35px_rgba(234,88,12,0.35)] border border-white/20 transform transition-transform duration-300 active:scale-[0.98]">
@@ -298,7 +291,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Qidiruv (Menyuda) */}
+      {/* Qidiruv */}
       {activeTab === 'menu' && (
         <div className="px-4 pt-3.5">
           <div className="relative">
@@ -314,7 +307,7 @@ export default function App() {
         </div>
       )}
 
-      {/* 3. Kategoriyalar (Menyuda) */}
+      {/* 3. Kategoriyalar */}
       {activeTab === 'menu' && (
         <div className="px-4 pt-3">
           <div className="flex space-x-2 overflow-x-auto no-scrollbar py-1">
@@ -519,38 +512,16 @@ export default function App() {
               <span className="text-sm font-black text-amber-400">5,000 FOGO Coin</span>
             </div>
           </div>
-
-          <div className="bg-zinc-900/90 rounded-3xl p-4 border border-white/10 space-y-3">
-            <h4 className="text-xs font-black uppercase text-zinc-400">Do'stlarni taklif qiling</h4>
-            <p className="text-xs text-zinc-300 leading-relaxed">
-              Do'stingiz birinchi buyurtmani berganida har ikkingizga 10,000 so'mlik vaucher taqdim etiladi.
-            </p>
-            <button
-              onClick={() => {
-                triggerHaptic('success');
-                alert("Havola nusxalandi!");
-              }}
-              className="w-full py-2.5 rounded-xl bg-white/10 text-white text-xs font-bold hover:bg-white/20 active:scale-95 transition-all"
-            >
-              Taklif havolasini nusxalash 🔗
-            </button>
-          </div>
         </main>
       )}
 
-      {/* Admin Tab (Faqat siz uchun) */}
+      {/* Admin Tab (To'liq buyurtmalar va taom boshqaruvi) */}
       {activeTab === 'admin' && (
         <main className="px-4 pt-4 flex-1 animate-fadeIn space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-base font-black text-white flex items-center space-x-2">
               <span>⚙️</span> <span>Admin Boshqaruv Paneli</span>
             </h2>
-            <button
-              onClick={fetchAdminOrders}
-              className="px-3 py-1 bg-white/10 text-xs font-bold rounded-xl active:scale-95"
-            >
-              Yangilash 🔄
-            </button>
           </div>
 
           {/* Yangi taom qo'shish formasi */}
@@ -595,25 +566,77 @@ export default function App() {
               type="submit"
               className="w-full py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-rose-600 text-white font-black text-xs active:scale-95 transition-all shadow-md"
             >
-              Menyuga qo'shish ➕
+              Menyuga qo'shish va Saqlash 💾
             </button>
           </form>
 
-          {/* Buyurtmalar ro'yxati */}
+          {/* Mavjud taomlar ro'yxati (o'chirish imkoni bilan) */}
           <div className="bg-zinc-900/90 rounded-3xl p-4 border border-white/10 space-y-3">
-            <h3 className="text-xs font-black uppercase text-amber-400">Tushgan Buyurtmalar</h3>
+            <h3 className="text-xs font-black uppercase text-amber-400">Barcha Taomlar ({products.length} ta)</h3>
+            <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+              {products.map(p => (
+                <div key={p.id} className="flex items-center justify-between bg-black/50 p-2.5 rounded-2xl border border-white/5">
+                  <div className="flex items-center space-x-2">
+                    <img src={p.image} alt={p.name} className="w-8 h-8 rounded-lg object-cover" />
+                    <div>
+                      <p className="text-xs font-bold text-white line-clamp-1">{p.name}</p>
+                      <p className="text-[10px] text-amber-400">{Number(p.price).toLocaleString()} so'm</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleDeleteProduct(p.id)}
+                    className="p-1 px-2.5 bg-rose-500/20 text-rose-400 hover:bg-rose-500 hover:text-white rounded-xl text-xs font-bold transition-all"
+                  >
+                    O'chirish 🗑️
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Tushgan Buyurtmalar ro'yxati */}
+          <div className="bg-zinc-900/90 rounded-3xl p-4 border border-white/10 space-y-3">
+            <div className="flex justify-between items-center">
+              <h3 className="text-xs font-black uppercase text-amber-400">Tushgan Buyurtmalar ({adminOrders.length})</h3>
+              {adminOrders.length > 0 && (
+                <button
+                  onClick={() => {
+                    if (confirm("Buyurtmalar tarixini tozalaysizmi?")) {
+                      setAdminOrders([]);
+                      localStorage.removeItem('fogo_orders');
+                    }
+                  }}
+                  className="text-[10px] text-zinc-500 hover:text-rose-400"
+                >
+                  Tozalash
+                </button>
+              )}
+            </div>
+
             {adminOrders.length === 0 ? (
-              <p className="text-xs text-zinc-500 text-center py-4">Hozircha yangi buyurtmalar yo'q.</p>
+              <p className="text-xs text-zinc-500 text-center py-4">Hozircha buyurtmalar yo'q.</p>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-2.5">
                 {adminOrders.map((ord, idx) => (
                   <div key={idx} className="bg-black/50 p-3 rounded-2xl border border-white/5 space-y-1">
                     <div className="flex justify-between items-center">
-                      <span className="text-xs font-black text-white">{ord.name} ({ord.phone})</span>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400">Yangi</span>
+                      <span className="text-xs font-black text-white">#{ord.id} - {ord.name}</span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400">
+                        {ord.date || "Yangi"}
+                      </span>
                     </div>
+                    <p className="text-[11px] text-zinc-400">📞 Tel: {ord.phone}</p>
                     <p className="text-[11px] text-zinc-400">📍 Manzil: {ord.address}</p>
-                    <p className="text-[11px] text-zinc-300 font-bold">💵 Jami: {Number(ord.totalPrice).toLocaleString()} so'm</p>
+                    <div className="py-1 border-t border-white/5 mt-1">
+                      {ord.items?.map((it, i) => (
+                        <p key={i} className="text-[10px] text-zinc-300">
+                          • {it.name} x {it.quantity} dona ({Number(it.price * it.quantity).toLocaleString()} so'm)
+                        </p>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-orange-400 font-black pt-1">
+                      Jami: {Number(ord.totalPrice).toLocaleString()} so'm
+                    </p>
                   </div>
                 ))}
               </div>
@@ -638,7 +661,7 @@ export default function App() {
         </div>
       )}
 
-      {/* 6. Pastki Navigatsiya (Menyu, Savat, Bonus, Admin) */}
+      {/* 6. Pastki Navigatsiya */}
       <nav className="fixed bottom-0 inset-x-0 bg-[#09090b]/90 backdrop-blur-2xl border-t border-white/10 px-5 py-2.5 flex justify-between items-center z-50">
         <button
           onClick={() => { triggerHaptic('light'); setActiveTab('menu'); }}
@@ -675,10 +698,9 @@ export default function App() {
           <span className="text-[10px] tracking-wide">Bonus</span>
         </button>
 
-        {/* Admin bo'limi */}
         {isAdmin && (
           <button
-            onClick={() => { triggerHaptic('light'); setActiveTab('admin'); fetchAdminOrders(); }}
+            onClick={() => { triggerHaptic('light'); setActiveTab('admin'); }}
             className={`flex flex-col items-center space-y-1 active:scale-90 transition-transform ${
               activeTab === 'admin' ? 'text-cyan-400 font-black' : 'text-zinc-500 hover:text-zinc-300'
             }`}
@@ -715,4 +737,4 @@ export default function App() {
       )}
     </div>
   );
-} 
+}
