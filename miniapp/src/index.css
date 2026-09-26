@@ -13,6 +13,15 @@ body {
   color: #ffffff;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+/* Matn kiritish kataklariga bosish va yozishga to'liq ruxsat berish */
+input, textarea, select {
+  -webkit-user-select: text !important;
+  user-select: text !important;
+  pointer-events: auto !important;
+  cursor: text !important;
 }
 
 .scrollbar-none::-webkit-scrollbar {
