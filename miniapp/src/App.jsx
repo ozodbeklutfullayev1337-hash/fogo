@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 
 const API_BASE = 'https://fogo-8c12.onrender.com';
+const ADMIN_ID = 6515742580; // Sizning Telegram ID raqamingiz
 
 const DEFAULT_CATEGORIES = [
   { id: 'burgers', name: '🍔 Burger' },
@@ -65,15 +66,26 @@ export default function App() {
   const [products, setProducts] = useState(DEFAULT_PRODUCTS);
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [cart, setCart] = useState([]);
-  const [activeTab, setActiveTab] = useState('menu');
+  const [activeTab, setActiveTab] = useState('menu'); // 'menu' | 'cart' | 'bonus' | 'admin'
   const [searchQuery, setSearchQuery] = useState('');
   const [orderSuccess, setOrderSuccess] = useState(false);
   const [cartBouncing, setCartBouncing] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   // Buyurtma formasi
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerAddress, setCustomerAddress] = useState('');
+
+  // Admin bo'limi uchun holatlar
+  const [adminOrders, setAdminOrders] = useState([]);
+  const [newProdName, setNewProdName] = useState('');
+  const [newProdPrice, setNewProdPrice] = useState('');
+  const [newProdCategory, setNewProdCategory] = useState('burgers');
+  const [newProdImg, setNewProdImg] = useState('');
+
+  const currentUserId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
+  const isAdmin = currentUserId === ADMIN_ID || !currentUserId; // Brauzerda test qilganda ham ruxsat beradi
 
   const triggerHaptic = (style = 'medium') => {
     if (window.Telegram?.WebApp?.HapticFeedback) {
@@ -115,6 +127,37 @@ export default function App() {
     } catch (err) {
       console.log("Mock data ishlatilmoqda");
     }
+  };
+
+  const fetchAdminOrders = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/orders`);
+      if (res.ok) {
+        const data = await res.json();
+        setAdminOrders(data.orders || []);
+      }
+    } catch (err) {
+      console.log("Admin buyurtmalarni olishda xato:", err);
+    }
+  };
+
+  const handleAddNewProduct = (e) => {
+    e.preventDefault();
+    if (!newProdName || !newProdPrice) return;
+    const newProduct = {
+      id: Date.now(),
+      categoryId: newProdCategory,
+      name: newProdName,
+      price: Number(newProdPrice),
+      description: "Yangi qo'shilgan mazali taom",
+      image: newProdImg || 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=500'
+    };
+    setProducts(prev => [newProduct, ...prev]);
+    setNewProdName('');
+    setNewProdPrice('');
+    setNewProdImg('');
+    triggerHaptic('success');
+    alert("Yangi taom menyuga muvaffaqiyatli qo'shildi!");
   };
 
   const filteredProducts = products.filter(p => {
@@ -167,34 +210,47 @@ export default function App() {
       return;
     }
 
-    try {
-      const orderData = {
-        name: customerName || 'Foydalanuvchi',
-        phone: customerPhone,
-        address: customerAddress,
-        items: cart.map(item => ({
-          productId: item.id,
-          name: item.name,
-          price: item.price,
-          quantity: item.quantity
-        })),
-        totalPrice: totalAmount,
-        telegramId: window.Telegram?.WebApp?.initDataUnsafe?.user?.id || null
-      };
+    setLoading(true);
 
-      await fetch(`${API_BASE}/api/client/orders`, {
+    const orderData = {
+      name: customerName || 'Foydalanuvchi',
+      phone: customerPhone,
+      address: customerAddress,
+      items: cart.map(item => ({
+        productId: item.id,
+        name: item.name,
+        price: item.price,
+        quantity: item.quantity
+      })),
+      totalPrice: totalAmount,
+      telegramId: currentUserId || ADMIN_ID
+    };
+
+    try {
+      // 1. Render serveriga buyurtma yuborish
+      const res = await fetch(`${API_BASE}/api/client/orders`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(orderData)
       });
 
+      // 2. Agar Telegram WebApp ochiq bo'lsa, Telegram botga bevosita ma'lumot uzatish
+      if (window.Telegram?.WebApp?.sendData) {
+        window.Telegram.WebApp.sendData(JSON.stringify(orderData));
+      }
+
+      setAdminOrders(prev => [orderData, ...prev]);
       triggerHaptic('success');
       setCart([]);
       setOrderSuccess(true);
     } catch (err) {
+      // Offline fallback: baribir qabul qiladi
+      setAdminOrders(prev => [orderData, ...prev]);
       triggerHaptic('success');
       setCart([]);
       setOrderSuccess(true);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -224,66 +280,72 @@ export default function App() {
         </div>
       </header>
 
-      {/* 2. Hero Banner */}
-      <div className="px-4 pt-3">
-        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-rose-600 via-orange-600 to-amber-500 p-5 shadow-[0_10px_35px_rgba(234,88,12,0.35)] border border-white/20 transform transition-transform duration-300 active:scale-[0.98]">
-          <div className="relative z-10 space-y-1">
-            <span className="inline-block px-3 py-0.5 rounded-full text-[10px] font-black tracking-widest bg-black/40 text-amber-200 border border-white/10 uppercase backdrop-blur-sm">
-              🔥 Maxsus Taklif
-            </span>
-            <h2 className="text-xl font-black text-white leading-tight drop-shadow-md">
-              O'zgacha Ta'm, <br />Haqiqiy Olovli Ishtaha!
-            </h2>
-            <p className="text-xs text-white/90 font-medium pt-0.5">Har bir buyurtmada o'zgacha sifat</p>
+      {/* 2. Hero Banner (Faqat Menyu ochilganda) */}
+      {activeTab === 'menu' && (
+        <div className="px-4 pt-3">
+          <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-rose-600 via-orange-600 to-amber-500 p-5 shadow-[0_10px_35px_rgba(234,88,12,0.35)] border border-white/20 transform transition-transform duration-300 active:scale-[0.98]">
+            <div className="relative z-10 space-y-1">
+              <span className="inline-block px-3 py-0.5 rounded-full text-[10px] font-black tracking-widest bg-black/40 text-amber-200 border border-white/10 uppercase backdrop-blur-sm">
+                🔥 Maxsus Taklif
+              </span>
+              <h2 className="text-xl font-black text-white leading-tight drop-shadow-md">
+                O'zgacha Ta'm, <br />Haqiqiy Olovli Ishtaha!
+              </h2>
+              <p className="text-xs text-white/90 font-medium pt-0.5">Har bir buyurtmada o'zgacha sifat</p>
+            </div>
+            <div className="absolute -right-8 -bottom-10 w-40 h-40 bg-amber-300/30 rounded-full blur-2xl animate-pulse" />
           </div>
-          <div className="absolute -right-8 -bottom-10 w-40 h-40 bg-amber-300/30 rounded-full blur-2xl animate-pulse" />
         </div>
-      </div>
+      )}
 
-      {/* Qidiruv */}
-      <div className="px-4 pt-3.5">
-        <div className="relative">
-          <input
-            type="text"
-            placeholder="Sevimli taomingizni qidiring..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-zinc-900/90 border border-white/10 rounded-2xl py-2.5 pl-10 pr-4 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 transition-all duration-200 shadow-inner"
-          />
-          <span className="absolute left-3.5 top-2.5 text-zinc-400 text-xs">🔍</span>
+      {/* Qidiruv (Menyuda) */}
+      {activeTab === 'menu' && (
+        <div className="px-4 pt-3.5">
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Sevimli taomingizni qidiring..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-zinc-900/90 border border-white/10 rounded-2xl py-2.5 pl-10 pr-4 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 transition-all duration-200 shadow-inner"
+            />
+            <span className="absolute left-3.5 top-2.5 text-zinc-400 text-xs">🔍</span>
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* 3. Kategoriyalar */}
-      <div className="px-4 pt-3">
-        <div className="flex space-x-2 overflow-x-auto no-scrollbar py-1">
-          <button
-            onClick={() => { triggerHaptic('light'); setSelectedCategory(null); }}
-            className={`px-4 py-2 rounded-2xl text-xs font-black whitespace-nowrap active:scale-95 transition-all duration-200 ${
-              selectedCategory === null
-                ? 'bg-gradient-to-r from-orange-500 to-rose-600 text-white shadow-[0_0_15px_rgba(249,115,22,0.4)] border border-orange-400/50 scale-[1.02]'
-                : 'bg-zinc-900/80 border border-white/5 text-zinc-400 hover:text-white'
-            }`}
-          >
-            🔥 Barchasi
-          </button>
-          {categories.map(cat => (
+      {/* 3. Kategoriyalar (Menyuda) */}
+      {activeTab === 'menu' && (
+        <div className="px-4 pt-3">
+          <div className="flex space-x-2 overflow-x-auto no-scrollbar py-1">
             <button
-              key={cat.id}
-              onClick={() => { triggerHaptic('light'); setSelectedCategory(cat.id); }}
+              onClick={() => { triggerHaptic('light'); setSelectedCategory(null); }}
               className={`px-4 py-2 rounded-2xl text-xs font-black whitespace-nowrap active:scale-95 transition-all duration-200 ${
-                selectedCategory === cat.id
+                selectedCategory === null
                   ? 'bg-gradient-to-r from-orange-500 to-rose-600 text-white shadow-[0_0_15px_rgba(249,115,22,0.4)] border border-orange-400/50 scale-[1.02]'
                   : 'bg-zinc-900/80 border border-white/5 text-zinc-400 hover:text-white'
               }`}
             >
-              {cat.name}
+              🔥 Barchasi
             </button>
-          ))}
+            {categories.map(cat => (
+              <button
+                key={cat.id}
+                onClick={() => { triggerHaptic('light'); setSelectedCategory(cat.id); }}
+                className={`px-4 py-2 rounded-2xl text-xs font-black whitespace-nowrap active:scale-95 transition-all duration-200 ${
+                  selectedCategory === cat.id
+                    ? 'bg-gradient-to-r from-orange-500 to-rose-600 text-white shadow-[0_0_15px_rgba(249,115,22,0.4)] border border-orange-400/50 scale-[1.02]'
+                    : 'bg-zinc-900/80 border border-white/5 text-zinc-400 hover:text-white'
+                }`}
+              >
+                {cat.name}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* 4. Mahsulotlar (2 ustunli neon kartochkalar) */}
+      {/* 4. Menyu Tab */}
       {activeTab === 'menu' && (
         <main className="px-4 pt-3 flex-1">
           {filteredProducts.length === 0 ? (
@@ -432,13 +494,131 @@ export default function App() {
                 </div>
                 <button
                   type="submit"
+                  disabled={loading}
                   className="w-full py-3 rounded-2xl bg-gradient-to-r from-orange-500 via-rose-600 to-amber-500 text-white font-black text-xs uppercase tracking-wider shadow-[0_0_20px_rgba(244,63,94,0.4)] active:scale-95 transition-all"
                 >
-                  Buyurtmani yuborish 🚀
+                  {loading ? "Yuborilmoqda..." : "Buyurtmani yuborish 🚀"}
                 </button>
               </form>
             </div>
           )}
+        </main>
+      )}
+
+      {/* Bonus Tab */}
+      {activeTab === 'bonus' && (
+        <main className="px-4 pt-4 flex-1 animate-fadeIn space-y-4">
+          <div className="bg-gradient-to-br from-amber-500/20 via-orange-600/20 to-rose-600/20 border border-amber-500/30 rounded-3xl p-5 text-center space-y-2">
+            <span className="text-4xl inline-block">💎</span>
+            <h3 className="text-base font-black text-white">FOGO CashBack & Bonus</h3>
+            <p className="text-xs text-zinc-300">
+              Har bir buyurtmangizdan 5% keshbek hisobingizga tushadi!
+            </p>
+            <div className="mt-3 py-2 px-4 bg-black/50 rounded-2xl border border-white/10 inline-block">
+              <span className="text-xs text-zinc-400">Sizning balansingiz: </span>
+              <span className="text-sm font-black text-amber-400">5,000 FOGO Coin</span>
+            </div>
+          </div>
+
+          <div className="bg-zinc-900/90 rounded-3xl p-4 border border-white/10 space-y-3">
+            <h4 className="text-xs font-black uppercase text-zinc-400">Do'stlarni taklif qiling</h4>
+            <p className="text-xs text-zinc-300 leading-relaxed">
+              Do'stingiz birinchi buyurtmani berganida har ikkingizga 10,000 so'mlik vaucher taqdim etiladi.
+            </p>
+            <button
+              onClick={() => {
+                triggerHaptic('success');
+                alert("Havola nusxalandi!");
+              }}
+              className="w-full py-2.5 rounded-xl bg-white/10 text-white text-xs font-bold hover:bg-white/20 active:scale-95 transition-all"
+            >
+              Taklif havolasini nusxalash 🔗
+            </button>
+          </div>
+        </main>
+      )}
+
+      {/* Admin Tab (Faqat siz uchun) */}
+      {activeTab === 'admin' && (
+        <main className="px-4 pt-4 flex-1 animate-fadeIn space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-black text-white flex items-center space-x-2">
+              <span>⚙️</span> <span>Admin Boshqaruv Paneli</span>
+            </h2>
+            <button
+              onClick={fetchAdminOrders}
+              className="px-3 py-1 bg-white/10 text-xs font-bold rounded-xl active:scale-95"
+            >
+              Yangilash 🔄
+            </button>
+          </div>
+
+          {/* Yangi taom qo'shish formasi */}
+          <form onSubmit={handleAddNewProduct} className="bg-zinc-900/90 rounded-3xl p-4 border border-white/10 space-y-3">
+            <h3 className="text-xs font-black uppercase text-orange-400">Yangi taom qo'shish</h3>
+            <input
+              type="text"
+              placeholder="Taom nomi (masalan: FOGO Mega Burger)"
+              value={newProdName}
+              onChange={e => setNewProdName(e.target.value)}
+              required
+              className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-orange-500"
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                type="number"
+                placeholder="Narxi (so'm)"
+                value={newProdPrice}
+                onChange={e => setNewProdPrice(e.target.value)}
+                required
+                className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-orange-500"
+              />
+              <select
+                value={newProdCategory}
+                onChange={e => setNewProdCategory(e.target.value)}
+                className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-orange-500"
+              >
+                <option value="burgers">Burger</option>
+                <option value="lavash">Lavash</option>
+                <option value="hotdogs">Hot-dog</option>
+                <option value="drinks">Ichimlik</option>
+              </select>
+            </div>
+            <input
+              type="text"
+              placeholder="Rasm havolasi (URL - ixtiyoriy)"
+              value={newProdImg}
+              onChange={e => setNewProdImg(e.target.value)}
+              className="w-full bg-black/60 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-orange-500"
+            />
+            <button
+              type="submit"
+              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-rose-600 text-white font-black text-xs active:scale-95 transition-all shadow-md"
+            >
+              Menyuga qo'shish ➕
+            </button>
+          </form>
+
+          {/* Buyurtmalar ro'yxati */}
+          <div className="bg-zinc-900/90 rounded-3xl p-4 border border-white/10 space-y-3">
+            <h3 className="text-xs font-black uppercase text-amber-400">Tushgan Buyurtmalar</h3>
+            {adminOrders.length === 0 ? (
+              <p className="text-xs text-zinc-500 text-center py-4">Hozircha yangi buyurtmalar yo'q.</p>
+            ) : (
+              <div className="space-y-2">
+                {adminOrders.map((ord, idx) => (
+                  <div key={idx} className="bg-black/50 p-3 rounded-2xl border border-white/5 space-y-1">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-black text-white">{ord.name} ({ord.phone})</span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400">Yangi</span>
+                    </div>
+                    <p className="text-[11px] text-zinc-400">📍 Manzil: {ord.address}</p>
+                    <p className="text-[11px] text-zinc-300 font-bold">💵 Jami: {Number(ord.totalPrice).toLocaleString()} so'm</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </main>
       )}
 
@@ -458,8 +638,8 @@ export default function App() {
         </div>
       )}
 
-      {/* 6. Pastki Navigatsiya */}
-      <nav className="fixed bottom-0 inset-x-0 bg-[#09090b]/90 backdrop-blur-2xl border-t border-white/10 px-8 py-2.5 flex justify-around items-center z-50">
+      {/* 6. Pastki Navigatsiya (Menyu, Savat, Bonus, Admin) */}
+      <nav className="fixed bottom-0 inset-x-0 bg-[#09090b]/90 backdrop-blur-2xl border-t border-white/10 px-5 py-2.5 flex justify-between items-center z-50">
         <button
           onClick={() => { triggerHaptic('light'); setActiveTab('menu'); }}
           className={`flex flex-col items-center space-y-1 active:scale-90 transition-transform ${
@@ -486,12 +666,27 @@ export default function App() {
         </button>
 
         <button
-          onClick={() => { triggerHaptic('light'); alert("Tez orada yangiliklar qo'shiladi!"); }}
-          className="flex flex-col items-center space-y-1 text-zinc-500 hover:text-zinc-300 active:scale-90 transition-transform"
+          onClick={() => { triggerHaptic('light'); setActiveTab('bonus'); }}
+          className={`flex flex-col items-center space-y-1 active:scale-90 transition-transform ${
+            activeTab === 'bonus' ? 'text-amber-400 font-black' : 'text-zinc-500 hover:text-zinc-300'
+          }`}
         >
           <span className="text-xl">💎</span>
           <span className="text-[10px] tracking-wide">Bonus</span>
         </button>
+
+        {/* Admin bo'limi */}
+        {isAdmin && (
+          <button
+            onClick={() => { triggerHaptic('light'); setActiveTab('admin'); fetchAdminOrders(); }}
+            className={`flex flex-col items-center space-y-1 active:scale-90 transition-transform ${
+              activeTab === 'admin' ? 'text-cyan-400 font-black' : 'text-zinc-500 hover:text-zinc-300'
+            }`}
+          >
+            <span className="text-xl">⚙️</span>
+            <span className="text-[10px] tracking-wide">Admin</span>
+          </button>
+        )}
       </nav>
 
       {/* Muvaffaqiyat modali */}
@@ -520,4 +715,4 @@ export default function App() {
       )}
     </div>
   );
-}
+} 
